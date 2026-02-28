@@ -1,52 +1,20 @@
-"""公文档案整理工具 — 主入口。
+"""公文档案整理工具 — CLI 入口。
 
 用法：
-    uv run python src/doc_archive/main.py <公文根目录> [--output 输出文件.xlsx]
-
-目录结构示例：
-    公文根目录/
-    ├── 1993/
-    │   ├── 子目录/
-    │   │   ├── 文件1.pdf
-    │   │   └── 文件2.jpg
-    ├── 2024/
-    │   └── 文件3.docx
-    └── ...
+    uv run python -m src.doc_archive.main <公文根目录> [--output 输出文件.xlsx]
 """
 
 import argparse
-import re
 import sys
 import time
 from pathlib import Path
 
 import pandas as pd
 
-from extractor import ALL_EXTENSIONS, extract_text
-from parser import parse_document_fields
-
-
-def scan_directory(root_dir: Path) -> list[Path]:
-    """递归扫描目录，返回所有支持的文件路径。"""
-    files = []
-    for file_path in sorted(root_dir.rglob("*")):
-        if file_path.is_file() and file_path.suffix.lower() in ALL_EXTENSIONS:
-            # 跳过隐藏文件和临时文件
-            if file_path.name.startswith((".", "~")):
-                continue
-            files.append(file_path)
-    return files
-
-
-def guess_year_from_path(file_path: Path, root_dir: Path) -> str:
-    """从文件路径中推断年份。"""
-    rel_path = file_path.relative_to(root_dir)
-    parts = rel_path.parts
-    for part in parts:
-        match = re.match(r"^(19\d{2}|20\d{2})$", part)
-        if match:
-            return match.group(1)
-    return ""
+from src.core.extractor import extract_text
+from src.core.file_scanner import guess_year_from_path, scan_directory
+from src.core.parser import parse_document_fields
+from src.config import ALL_EXTENSIONS
 
 
 def process_files(root_dir: Path, output_path: Path) -> None:
@@ -125,7 +93,6 @@ def process_files(root_dir: Path, output_path: Path) -> None:
     print("-" * 60)
     df = pd.DataFrame(records)
 
-    # 定义列顺序
     columns = [
         "序号", "发文字号", "发文标题", "发文日期", "发文机关",
         "主送单位", "公文种类", "密级", "来源年份",
@@ -136,7 +103,6 @@ def process_files(root_dir: Path, output_path: Path) -> None:
     with pd.ExcelWriter(output_path, engine="openpyxl") as writer:
         df.to_excel(writer, sheet_name="公文汇总", index=False)
 
-        # 如果有错误，单独写一个 sheet
         if errors:
             df_errors = pd.DataFrame(errors)
             df_errors.to_excel(writer, sheet_name="处理错误", index=False)
