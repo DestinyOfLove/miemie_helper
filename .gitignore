@@ -26,6 +26,9 @@ build/
 # Claude Code
 .claude/settings.local.json
 
+# Runtime data
+.miemie_data/
+
 # OS
 .DS_Store
 Thumbs.db
