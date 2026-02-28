@@ -1,6 +1,6 @@
 # MieMie Helper
 
-工作与生活辅助工具集合项目。模块化设计，每个工具独立目录，按需扩展。
+工作与生活辅助工具集合项目。模块化设计，前后端分离架构。
 
 ## 项目约束
 
@@ -11,47 +11,63 @@
 ## 运行命令
 
 ```bash
-# Web UI（Gradio，端口 4001）
-uv run python src/webapp/app.py
+# Web 应用（NiceGUI + FastAPI，端口 4001）
+uv run python main.py
 
-# CLI 直接处理
-uv run python src/doc_archive/main.py <公文目录> [-o 输出.xlsx]
+# CLI 直接处理（保留兼容）
+uv run python -m src.doc_archive.main <公文目录> [-o 输出.xlsx]
 ```
 
 ## 项目结构
 
 ```
 src/
-├── doc_archive/     # 公文档案整理 — 核心逻辑
-│   ├── main.py      # CLI 入口：扫描目录 → 提取 → 解析 → 输出 Excel
-│   ├── extractor.py # 文本提取：图片OCR / PDF文本+OCR / docx解析
-│   └── parser.py    # 字段解析：从文本中用正则提取发文字号、标题、日期等
-└── webapp/          # Web UI（Gradio）
-    └── app.py       # 封装 doc_archive，增加增量去重、进度条、文件下载
+├── config.py              # 集中配置（路径、模型名、参数）
+├── core/                  # 共享核心逻辑（无 web 依赖）
+│   ├── extractor.py       # 文本提取：图片OCR / PDF / docx
+│   ├── parser.py          # 字段解析：正则提取发文字号、标题、日期等
+│   ├── file_scanner.py    # 目录扫描 + 年份推断
+│   └── excel_exporter.py  # DataFrame → Excel 导出
+├── search/                # 搜索引擎层
+│   ├── models.py          # Pydantic 数据模型
+│   ├── document_db.py     # SQLite 文档元数据 + 目录管理
+│   ├── fulltext_store.py  # FTS5 全文检索（jieba 中文分词）
+│   ├── embedding.py       # sentence-transformers 向量编码
+│   ├── vector_store.py    # ChromaDB 向量存储 + 文档分块
+│   └── indexer.py         # 增量索引编排器
+├── api/                   # FastAPI REST 路由
+│   ├── index_routes.py    # /api/index/* — 索引管理
+│   ├── search_routes.py   # /api/search/* — 双模式搜索
+│   └── export_routes.py   # /api/export/* — Excel 导出
+├── ui/                    # NiceGUI 前端页面
+│   ├── layout.py          # 共享导航栏
+│   ├── home_page.py       # / — 工具集首页
+│   ├── search_page.py     # /search — 文档搜索（索引 + 双栏结果）
+│   └── archive_page.py    # /archive — 归档导出
+└── doc_archive/           # CLI 入口（保留兼容）
+    └── main.py
+
+.miemie_data/              # 运行时数据（git-ignored）
+├── db/documents.db        # SQLite（元数据 + FTS5）
+├── vector/chroma/         # ChromaDB 向量持久化
+└── models/                # Embedding 模型缓存
 ```
 
-## 模块详情
+## 架构要点
 
-### doc_archive — 发文档案整理
+**搜索管道**：
+- 全文检索：jieba 分词 → SQLite FTS5 MATCH → snippet 高亮
+- 向量检索：sentence-transformers 编码 → ChromaDB cosine 相似度 → 去重
+- 结果双栏并列展示
 
-将 1993-2025 年历年发文文件批量解析为结构化 Excel 表格。
+**增量索引**：mtime+size 快速预过滤 → MD5 哈希确认 → 只处理变更文件
 
-**处理管道**：`文件扫描 → extractor.extract_text() → parser.parse_document_fields() → Excel`
+**文本提取**（`src/core/extractor.py`）：
+- 图片 → OpenCV 预处理 + RapidOCR
+- PDF → PyMuPDF 嵌入文本，不足 20 字则 OCR
+- .docx → python-docx，.doc → 暂不支持
 
-**支持格式**：
-- 图片（JPG/PNG/TIFF/BMP）→ OpenCV 预处理 + RapidOCR
-- PDF → PyMuPDF 优先提取嵌入文本，文本不足 20 字则转图片 OCR
-- .docx → python-docx 提取段落和表格文本
-- .doc → **暂不支持自动处理**，需 LibreOffice 手动转换
-
-**解析字段**：发文字号、发文标题、发文日期、发文机关、主送单位、公文种类、密级、来源年份
-
-### webapp — Web 界面
-
-基于 Gradio 的 Web UI，封装 doc_archive 核心逻辑。相比 CLI 额外支持：
-- 增量处理：上传已有 Excel，通过文件 MD5 哈希去重
-- 长文本拆分：超过 Excel 单元格限制（32000 字）时自动拆列
-- webapp 通过 `sys.path.insert` 引用 doc_archive，非包导入
+**Embedding 模型**：BAAI/bge-small-zh-v1.5（首次运行需下载 ~100MB）
 
 ## 开发规范
 
