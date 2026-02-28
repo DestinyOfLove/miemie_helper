@@ -1,22 +1,21 @@
-"""Embedding 模型封装：sentence-transformers + BAAI/bge-small-zh-v1.5。"""
+"""Embedding 模型封装：fastembed + BAAI/bge-small-zh-v1.5。"""
 
 import numpy as np
-from sentence_transformers import SentenceTransformer
+from fastembed import TextEmbedding
 
 from src.config import EMBEDDING_DIMENSION, EMBEDDING_MODEL_NAME, MODEL_DIR, ensure_dirs
 
-_model: SentenceTransformer | None = None
+_model: TextEmbedding | None = None
 
 
-def get_embedding_model() -> SentenceTransformer:
+def get_embedding_model() -> TextEmbedding:
     """延迟初始化 embedding 模型（单例）。"""
     global _model
     if _model is None:
         ensure_dirs()
-        _model = SentenceTransformer(
-            EMBEDDING_MODEL_NAME,
-            cache_folder=str(MODEL_DIR),
-            device="cpu",
+        _model = TextEmbedding(
+            model_name=EMBEDDING_MODEL_NAME,
+            cache_dir=str(MODEL_DIR),
         )
     return _model
 
@@ -32,19 +31,12 @@ def encode_texts(texts: list[str], batch_size: int = 32) -> np.ndarray:
     if not texts:
         return np.empty((0, EMBEDDING_DIMENSION))
     model = get_embedding_model()
-    return model.encode(
-        texts,
-        batch_size=batch_size,
-        show_progress_bar=False,
-        normalize_embeddings=True,
-    )
+    embeddings = list(model.embed(texts, batch_size=batch_size))
+    return np.array(embeddings)
 
 
 def encode_query(query: str) -> np.ndarray:
-    """编码搜索查询。BGE 模型对查询使用 'query: ' 前缀。"""
+    """编码搜索查询。fastembed 内置 query 前缀处理。"""
     model = get_embedding_model()
-    prefixed = f"query: {query}"
-    return model.encode(
-        prefixed,
-        normalize_embeddings=True,
-    )
+    embeddings = list(model.query_embed(query))
+    return np.array(embeddings[0])

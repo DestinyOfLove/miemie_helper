@@ -23,7 +23,7 @@ MODEL_DIR = DATA_DIR / "models"
 
 # Embedding 模型配置
 EMBEDDING_MODEL_NAME = "BAAI/bge-small-zh-v1.5"
-EMBEDDING_DIMENSION = 384
+EMBEDDING_DIMENSION = 512
 
 # 文档分块参数
 CHUNK_SIZE = 400  # 字符

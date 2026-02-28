@@ -6,6 +6,7 @@ readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
     "chromadb>=1.5.2",
+    "fastembed",
     "jieba>=0.42.1",
     "nicegui>=3.8.0",
     "opencv-python>=4.13.0.92",
@@ -16,5 +17,12 @@ dependencies = [
     "pymupdf>=1.27.1",
     "python-docx>=1.2.0",
     "rapidocr-onnxruntime>=1.4.4",
-    "sentence-transformers>=5.2.3",
+]
+
+[tool.uv]
+# fastembed==0.7.4 declares pillow<12.0, but it only uses pillow for image models,
+# not text embeddings. The constraint is overly conservative and conflicts with
+# rapidocr-onnxruntime which needs pillow 12+. Override to allow any pillow>=11.
+override-dependencies = [
+    "pillow>=11.0.0",
 ]
