@@ -4,6 +4,9 @@
     "unit-testing@claude-code-workflows": true,
     "data-engineering@claude-code-workflows": true,
     "agent-browser@agent-browser": true,
-    "data-validation-suite@claude-code-workflows": true
+    "data-validation-suite@claude-code-workflows": true,
+    "backend-development@claude-code-workflows": true,
+    "business-analytics@claude-code-workflows": true,
+    "agent-teams@claude-code-workflows": true
   }
 }
