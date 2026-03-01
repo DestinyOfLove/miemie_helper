@@ -157,7 +157,7 @@ function HtmlCell({ value }: { value: string }) {
     <CopyableCell text={plainText}>
       <div
         dangerouslySetInnerHTML={{ __html: value }}
-        style={{ padding: '8px 0', lineHeight: 1.8, whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}
+        style={{ padding: '8px 0', lineHeight: 1.8, whiteSpace: 'normal', wordBreak: 'break-all' }}
       />
     </CopyableCell>
   )
@@ -173,7 +173,7 @@ function ContentCell({ value }: { value: string }) {
           padding: '8px 0',
           lineHeight: 1.8,
           fontSize: '0.85em',
-          whiteSpace: 'pre-wrap',
+          whiteSpace: 'normal',
           wordBreak: 'break-all',
           maxHeight: '220px',
           overflowY: 'auto',
