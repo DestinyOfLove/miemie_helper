@@ -7,6 +7,8 @@ import jieba
 from src.search.document_db import get_connection
 from src.search.models import SearchResult
 
+# 预加载 jieba 词典，避免首次分词时的延迟
+jieba.initialize()
 
 _fts_initialized = False
 
@@ -41,28 +43,42 @@ def segment_text(text: str) -> str:
 def insert_fts_record(doc_id: str, file_name: str, title: str,
                       doc_number: str, issuing_authority: str,
                       full_text: str) -> None:
-    """插入一条 FTS5 记录。"""
+    """插入一条 FTS5 记录。元数据字段不分词，仅全文内容使用 jieba 分词。不自动 commit。"""
     _ensure_fts_table()
     conn = get_connection()
     conn.execute(
         """INSERT OR REPLACE INTO documents_fts
            (doc_id, file_name, title, doc_number, issuing_authority, content_segmented)
            VALUES (?, ?, ?, ?, ?, ?)""",
-        (doc_id, segment_text(file_name), segment_text(title),
-         segment_text(doc_number), segment_text(issuing_authority),
+        (doc_id, file_name, title, doc_number, issuing_authority,
          segment_text(full_text)),
     )
-    conn.commit()
+
+
+def batch_insert_fts_records(records: list[tuple]) -> None:
+    """批量插入 FTS5 记录。不自动 commit。
+
+    records 格式: [(doc_id, file_name, title, doc_number, issuing_authority, full_text), ...]
+    仅对 full_text 做 jieba 分词，元数据字段直接使用原文。
+    """
+    _ensure_fts_table()
+    conn = get_connection()
+    conn.executemany(
+        """INSERT OR REPLACE INTO documents_fts
+           (doc_id, file_name, title, doc_number, issuing_authority, content_segmented)
+           VALUES (?, ?, ?, ?, ?, ?)""",
+        [(doc_id, file_name, title, doc_number, issuing_authority, segment_text(full_text))
+         for doc_id, file_name, title, doc_number, issuing_authority, full_text in records],
+    )
 
 
 def delete_fts_record(doc_id: str) -> None:
-    """删除一条 FTS5 记录。"""
+    """删除一条 FTS5 记录。不自动 commit。"""
     _ensure_fts_table()
     conn = get_connection()
     conn.execute(
         "DELETE FROM documents_fts WHERE doc_id = ?", (doc_id,)
     )
-    conn.commit()
 
 
 def delete_fts_by_directory(doc_ids: list[str]) -> None:

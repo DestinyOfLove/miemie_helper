@@ -67,20 +67,14 @@ def _fulltext_search(query: str, scopes: list[str] | None = None,
 
 
 def _vector_search(query: str, directories: list[str] | None = None) -> list[SearchResult]:
-    """执行向量检索并丰富元数据。"""
+    """执行向量检索并丰富元数据。目录过滤下推到 ChromaDB 层。"""
     query_embedding = encode_query(query)
-    chroma_results = vector_store.search_similar(query_embedding)
+    chroma_results = vector_store.search_similar(
+        query_embedding, directories=directories
+    )
 
     if not chroma_results["ids"] or not chroma_results["ids"][0]:
         return []
-
-    # 目录过滤：收集合法 doc_id 集合
-    allowed_doc_ids: set[str] | None = None
-    if directories:
-        allowed_doc_ids = set()
-        for d in directories:
-            for doc in document_db.get_documents_by_directory(d):
-                allowed_doc_ids.add(doc.id)
 
     # 按 doc_id 去重（多个分块可能来自同一文档）
     seen_docs: dict[str, dict] = {}
@@ -89,9 +83,6 @@ def _vector_search(query: str, directories: list[str] | None = None) -> list[Sea
         doc_id = meta.get("doc_id", "")
         distance = chroma_results["distances"][0][i]
         snippet = chroma_results["documents"][0][i]
-
-        if allowed_doc_ids is not None and doc_id not in allowed_doc_ids:
-            continue
 
         if doc_id not in seen_docs:
             seen_docs[doc_id] = {

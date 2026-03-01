@@ -7,6 +7,7 @@ from src.config import DB_PATH, ensure_dirs
 from src.search.models import DirectoryInfo, DocumentRecord
 
 _conn: sqlite3.Connection | None = None
+_in_batch: bool = False
 
 
 def get_connection() -> sqlite3.Connection:
@@ -18,6 +19,7 @@ def get_connection() -> sqlite3.Connection:
         _conn.row_factory = sqlite3.Row
         _conn.execute("PRAGMA journal_mode=WAL")
         _conn.execute("PRAGMA foreign_keys=ON")
+        _conn.execute("PRAGMA busy_timeout=5000")
         _init_schema(_conn)
     return _conn
 
@@ -69,6 +71,50 @@ def _init_schema(conn: sqlite3.Connection) -> None:
     """)
     conn.commit()
 
+    # 增量迁移：添加可恢复索引所需的列
+    for col_name, col_type in [
+        ("processing_status", "TEXT NOT NULL DEFAULT 'indexed'"),
+        ("error_message", "TEXT NOT NULL DEFAULT ''"),
+        ("retry_count", "INTEGER NOT NULL DEFAULT 0"),
+    ]:
+        try:
+            conn.execute(f"ALTER TABLE documents ADD COLUMN {col_name} {col_type}")
+        except sqlite3.OperationalError:
+            pass  # 列已存在
+
+    # 启动时将 extracting 状态的文档重置为 pending（上次崩溃残留）
+    conn.execute(
+        "UPDATE documents SET processing_status = 'pending' "
+        "WHERE processing_status = 'extracting'"
+    )
+    conn.commit()
+
+
+# ── 批量事务控制 ──
+
+def begin_batch() -> None:
+    """开启批量事务。在批量模式下，写入方法不自动 commit。"""
+    global _in_batch
+    conn = get_connection()
+    conn.execute("BEGIN")
+    _in_batch = True
+
+
+def commit_batch() -> None:
+    """提交批量事务。"""
+    global _in_batch
+    conn = get_connection()
+    conn.commit()
+    _in_batch = False
+
+
+def rollback_batch() -> None:
+    """回滚批量事务。"""
+    global _in_batch
+    conn = get_connection()
+    conn.rollback()
+    _in_batch = False
+
 
 # ── 文档 CRUD ──
 
@@ -81,9 +127,9 @@ def upsert_document(doc: DocumentRecord) -> None:
             directory_root, extracted_text, extraction_method,
             doc_number, title, doc_date, issuing_authority, recipients,
             doc_type, classification, source_year,
-            indexed_at, vector_indexed, fts_indexed)
+            indexed_at, vector_indexed, fts_indexed, processing_status)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-                   datetime('now'), ?, ?)""",
+                   datetime('now'), ?, ?, 'extracting')""",
         (doc.id, doc.file_path, doc.file_name, doc.file_size, doc.file_mtime,
          doc.file_hash, doc.directory_root, doc.extracted_text,
          doc.extraction_method, doc.doc_number, doc.title, doc.doc_date,
@@ -91,7 +137,8 @@ def upsert_document(doc: DocumentRecord) -> None:
          doc.classification, doc.source_year,
          int(doc.vector_indexed), int(doc.fts_indexed)),
     )
-    conn.commit()
+    if not _in_batch:
+        conn.commit()
 
 
 def get_document(doc_id: str) -> DocumentRecord | None:
@@ -147,7 +194,8 @@ def delete_document(doc_id: str) -> None:
     """删除文档记录。"""
     conn = get_connection()
     conn.execute("DELETE FROM documents WHERE id = ?", (doc_id,))
-    conn.commit()
+    if not _in_batch:
+        conn.commit()
 
 
 def delete_documents_by_directory(directory_root: str) -> int:
@@ -185,7 +233,42 @@ def update_index_flags(doc_id: str, vector_indexed: bool | None = None,
     conn.execute(
         f"UPDATE documents SET {', '.join(updates)} WHERE id = ?", params
     )
-    conn.commit()
+    if not _in_batch:
+        conn.commit()
+
+
+def mark_processing(doc_id: str, status: str,
+                    error_message: str | None = None) -> None:
+    """更新文档的处理状态。"""
+    conn = get_connection()
+    if error_message is not None:
+        conn.execute(
+            "UPDATE documents SET processing_status = ?, error_message = ?, "
+            "retry_count = retry_count + 1 WHERE id = ?",
+            (status, error_message, doc_id),
+        )
+    else:
+        conn.execute(
+            "UPDATE documents SET processing_status = ? WHERE id = ?",
+            (status, doc_id),
+        )
+    if not _in_batch:
+        conn.commit()
+
+
+def get_resumable_files(directory_root: str, max_retries: int = 3) -> list[dict]:
+    """获取需要恢复处理的文件（pending 或 extracting 状态，retry_count < max_retries）。"""
+    conn = get_connection()
+    rows = conn.execute(
+        "SELECT id, file_path, file_hash FROM documents "
+        "WHERE directory_root = ? AND processing_status IN ('pending', 'extracting') "
+        "AND retry_count < ?",
+        (directory_root, max_retries),
+    ).fetchall()
+    return [
+        {"id": row["id"], "file_path": row["file_path"], "file_hash": row["file_hash"]}
+        for row in rows
+    ]
 
 
 # ── 索引目录管理 ──
@@ -301,4 +384,7 @@ def _row_to_document(row: sqlite3.Row) -> DocumentRecord:
         indexed_at=row["indexed_at"],
         vector_indexed=bool(row["vector_indexed"]),
         fts_indexed=bool(row["fts_indexed"]),
+        processing_status=row["processing_status"],
+        error_message=row["error_message"],
+        retry_count=row["retry_count"],
     )

@@ -1,8 +1,12 @@
-"""增量索引编排器：扫描→变更检测→提取→索引。"""
+"""增量索引编排器：扫描→变更检测→并行提取→批量索引。"""
 
+import logging
+import os
 import threading
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
 
+from src.config import BATCH_COMMIT_SIZE, INDEXING_WORKERS
 from src.core.extractor import compute_file_hash, extract_text
 from src.core.file_scanner import guess_year_from_path, scan_directory
 from src.core.parser import parse_document_fields
@@ -15,6 +19,8 @@ from src.search.models import (
     FileChange,
     IndexStatusResponse,
 )
+
+logger = logging.getLogger(__name__)
 
 
 class IndexingStatus:
@@ -69,8 +75,69 @@ class IndexingStatus:
 indexing_status = IndexingStatus()
 
 
+def _get_worker_count() -> int:
+    """计算并行 worker 数量。"""
+    if INDEXING_WORKERS > 0:
+        return INDEXING_WORKERS
+    return max(1, (os.cpu_count() or 4) - 2)
+
+
+def _extract_single_file(file_path_str: str, root_str: str,
+                          precomputed_hash: str | None = None) -> dict:
+    """在独立进程中提取单个文件（纯 CPU 工作，无共享状态）。
+
+    返回包含所有提取结果的字典。
+    """
+    file_path = Path(file_path_str)
+    root = Path(root_str)
+
+    try:
+        stat = file_path.stat()
+        file_hash = precomputed_hash or compute_file_hash(file_path)
+        text, method = extract_text(file_path)
+        year_hint = guess_year_from_path(file_path, root)
+
+        if text:
+            fields = parse_document_fields(text, file_path_str, year_hint)
+        else:
+            fields = {
+                "发文字号": "", "发文标题": "", "发文日期": "",
+                "发文机关": "", "主送单位": "", "公文种类": "",
+                "密级": "", "来源年份": year_hint,
+            }
+
+        normalized_text = normalize_text_for_indexing(text) if text else text
+
+        return {
+            "success": True,
+            "file_path": file_path_str,
+            "file_name": file_path.name,
+            "file_size": stat.st_size,
+            "file_mtime": stat.st_mtime,
+            "file_hash": file_hash,
+            "text": text,
+            "normalized_text": normalized_text,
+            "method": method,
+            "fields": fields,
+        }
+    except Exception as e:
+        return {
+            "success": False,
+            "file_path": file_path_str,
+            "file_name": Path(file_path_str).name,
+            "error": str(e),
+        }
+
+
 def run_indexing(directory: str) -> None:
-    """执行增量索引（同步，供后台线程调用）。"""
+    """执行增量索引（同步，供后台线程调用）。
+
+    流水线架构：
+    1. 扫描文件系统 + 变更检测
+    2. 并行文本提取（ProcessPoolExecutor）
+    3. 批量写入 SQLite + FTS5（批量事务）
+    4. 批量 Embedding + ChromaDB 写入
+    """
     root = Path(directory).resolve()
     directory_str = str(root)
 
@@ -78,17 +145,16 @@ def run_indexing(directory: str) -> None:
     document_db.upsert_directory(directory_str, status="scanning")
 
     try:
-        # Phase 1: 扫描文件系统
+        # ── Phase 1: 扫描文件系统 ──
         indexing_status.phase = "scanning"
         all_files = scan_directory(root)
         indexing_status.total_files = len(all_files)
 
-        # Phase 2: 加载已知文件
+        # ── Phase 2: 加载已知文件 + 分类变更 ──
         known_files = document_db.get_known_files(directory_str)
 
-        # Phase 3: 分类变更
         to_add: list[Path] = []
-        to_update: list[tuple[Path, str]] = []  # (path, old_doc_id)
+        to_update: list[tuple[Path, str, str]] = []  # (path, old_doc_id, new_hash)
         to_delete: list[str] = []  # doc_ids
 
         current_paths: set[str] = set()
@@ -109,7 +175,7 @@ def run_indexing(directory: str) -> None:
                 # MD5 确认
                 new_hash = compute_file_hash(file_path)
                 if new_hash != known["file_hash"]:
-                    to_update.append((file_path, known["id"]))
+                    to_update.append((file_path, known["id"], new_hash))
                 else:
                     indexing_status.skipped += 1
 
@@ -122,36 +188,175 @@ def run_indexing(directory: str) -> None:
             directory_str, file_count=len(all_files), status="indexing"
         )
 
-        # Phase 4: 处理删除
-        indexing_status.phase = "indexing"
+        # ── Phase 3: 处理删除 ──
         for doc_id in to_delete:
             _delete_document(doc_id)
             indexing_status.deleted += 1
 
-        # Phase 5: 处理新增和更新
-        for file_path in to_add:
-            indexing_status.current_file = file_path.name
-            try:
-                _index_file(file_path, root, directory_str)
-                indexing_status.added += 1
-            except Exception as e:
-                indexing_status.errors.append(f"{file_path.name}: {e}")
-            indexing_status.processed_files += 1
+        # ── Phase 4: 并行文本提取 ──
+        indexing_status.phase = "extracting"
 
-        for file_path, old_doc_id in to_update:
-            indexing_status.current_file = file_path.name
-            try:
-                _delete_document(old_doc_id)
-                _index_file(file_path, root, directory_str)
+        # 准备提取任务：合并新增和更新
+        extract_tasks: list[tuple[str, str | None, bool]] = []
+        # (file_path_str, precomputed_hash_or_None, is_update)
+        for fp in to_add:
+            extract_tasks.append((str(fp), None, False))
+        for fp, old_doc_id, new_hash in to_update:
+            # 先删除旧记录
+            _delete_document(old_doc_id)
+            extract_tasks.append((str(fp), new_hash, True))
+
+        extraction_results: list[dict] = []
+
+        if extract_tasks:
+            worker_count = min(_get_worker_count(), len(extract_tasks))
+            root_str = str(root)
+
+            if worker_count <= 1:
+                # 单进程模式（调试或少量文件时避免多进程开销）
+                for fp_str, pre_hash, _is_update in extract_tasks:
+                    indexing_status.current_file = Path(fp_str).name
+                    result = _extract_single_file(fp_str, root_str, pre_hash)
+                    extraction_results.append(result)
+                    indexing_status.processed_files += 1
+            else:
+                with ProcessPoolExecutor(max_workers=worker_count) as executor:
+                    future_map = {
+                        executor.submit(
+                            _extract_single_file, fp_str, root_str, pre_hash
+                        ): (fp_str, is_update)
+                        for fp_str, pre_hash, is_update in extract_tasks
+                    }
+                    for future in as_completed(future_map):
+                        result = future.result()
+                        extraction_results.append(result)
+                        indexing_status.current_file = result["file_name"]
+                        indexing_status.processed_files += 1
+
+        # ── Phase 5: 批量写入 SQLite + FTS5 ──
+        indexing_status.phase = "indexing"
+
+        successful_results: list[dict] = []
+        for result in extraction_results:
+            if not result["success"]:
+                indexing_status.errors.append(
+                    f"{result['file_name']}: {result['error']}"
+                )
+                continue
+            successful_results.append(result)
+
+        # 统计新增/更新
+        update_paths = {str(fp) for fp, _, _ in to_update}
+        for result in successful_results:
+            if result["file_path"] in update_paths:
                 indexing_status.updated += 1
-            except Exception as e:
-                indexing_status.errors.append(f"{file_path.name}: {e}")
-            indexing_status.processed_files += 1
+            else:
+                indexing_status.added += 1
 
-        # 完成
-        indexed_count = (
-            len(all_files) - len(indexing_status.errors)
-        )
+        # 分批写入
+        all_chunks: list[dict] = []
+        all_doc_ids_for_vector: list[str] = []
+
+        for batch_start in range(0, len(successful_results), BATCH_COMMIT_SIZE):
+            batch = successful_results[batch_start:batch_start + BATCH_COMMIT_SIZE]
+
+            document_db.begin_batch()
+            try:
+                fts_records: list[tuple] = []
+
+                for result in batch:
+                    fields = result["fields"]
+                    normalized_text = result["normalized_text"]
+
+                    doc = DocumentRecord(
+                        id=result["file_hash"],
+                        file_path=result["file_path"],
+                        file_name=result["file_name"],
+                        file_size=result["file_size"],
+                        file_mtime=result["file_mtime"],
+                        file_hash=result["file_hash"],
+                        directory_root=directory_str,
+                        extracted_text=normalized_text or "",
+                        extraction_method=result["method"],
+                        doc_number=fields["发文字号"],
+                        title=fields["发文标题"],
+                        doc_date=fields["发文日期"],
+                        issuing_authority=fields["发文机关"],
+                        recipients=fields["主送单位"],
+                        doc_type=fields["公文种类"],
+                        classification=fields["密级"],
+                        source_year=fields["来源年份"],
+                    )
+
+                    # 写入 SQLite
+                    document_db.upsert_document(doc)
+
+                    # 收集 FTS5 记录
+                    fts_records.append((
+                        doc.id, doc.file_name, doc.title,
+                        doc.doc_number, doc.issuing_authority,
+                        normalized_text or "",
+                    ))
+
+                    # 标记 FTS 已索引
+                    document_db.update_index_flags(doc.id, fts_indexed=True)
+
+                    # 收集向量分块
+                    if result["text"]:
+                        metadata = {
+                            "file_name": doc.file_name,
+                            "title": doc.title,
+                            "doc_number": doc.doc_number,
+                            "source_year": doc.source_year,
+                            "directory_root": directory_str,
+                        }
+                        chunks = vector_store.chunk_document(
+                            doc.id, normalized_text or "", metadata
+                        )
+                        if chunks:
+                            all_chunks.extend(chunks)
+                            all_doc_ids_for_vector.append(doc.id)
+
+                # 批量写入 FTS5
+                fulltext_store.batch_insert_fts_records(fts_records)
+
+                document_db.commit_batch()
+            except Exception:
+                document_db.rollback_batch()
+                raise
+
+        # ── Phase 6: 批量 Embedding + ChromaDB 写入 ──
+        if all_chunks:
+            indexing_status.phase = "embedding"
+            all_texts = [c["text"] for c in all_chunks]
+            embeddings = encode_texts(all_texts, batch_size=64)
+            vector_store.batch_add_document_chunks(all_chunks, embeddings)
+
+            # 标记向量索引完成
+            document_db.begin_batch()
+            try:
+                for doc_id in set(all_doc_ids_for_vector):
+                    document_db.update_index_flags(doc_id, vector_indexed=True)
+                    document_db.mark_processing(doc_id, "indexed")
+                document_db.commit_batch()
+            except Exception:
+                document_db.rollback_batch()
+                raise
+
+        # 将没有向量索引的文档也标记为 indexed
+        document_db.begin_batch()
+        try:
+            vector_doc_ids = set(all_doc_ids_for_vector)
+            for result in successful_results:
+                if result["file_hash"] not in vector_doc_ids:
+                    document_db.mark_processing(result["file_hash"], "indexed")
+            document_db.commit_batch()
+        except Exception:
+            document_db.rollback_batch()
+            raise
+
+        # ── 完成 ──
+        indexed_count = len(all_files) - len(indexing_status.errors)
         document_db.update_directory_status(
             directory_str, status="complete", indexed_count=indexed_count
         )
@@ -166,70 +371,6 @@ def run_indexing(directory: str) -> None:
         indexing_status.current_file = ""
         # is_running 必须在 phase 设置之后才清除，避免 UI 轮询竞态
         indexing_status.is_running = False
-
-
-def _index_file(file_path: Path, root: Path, directory_str: str) -> None:
-    """索引单个文件：提取→解析→存入 SQLite + FTS5 + ChromaDB。"""
-    stat = file_path.stat()
-    file_hash = compute_file_hash(file_path)
-    text, method = extract_text(file_path)
-    year_hint = guess_year_from_path(file_path, root)
-
-    if text:
-        fields = parse_document_fields(text, str(file_path), year_hint)
-    else:
-        fields = {
-            "发文字号": "", "发文标题": "", "发文日期": "",
-            "发文机关": "", "主送单位": "", "公文种类": "",
-            "密级": "", "来源年份": year_hint,
-        }
-
-    # 规范化文本：去掉所有换行，拼成单行
-    normalized_text = normalize_text_for_indexing(text) if text else text
-
-    doc = DocumentRecord(
-        id=file_hash,
-        file_path=str(file_path),
-        file_name=file_path.name,
-        file_size=stat.st_size,
-        file_mtime=stat.st_mtime,
-        file_hash=file_hash,
-        directory_root=directory_str,
-        extracted_text=normalized_text,
-        extraction_method=method,
-        doc_number=fields["发文字号"],
-        title=fields["发文标题"],
-        doc_date=fields["发文日期"],
-        issuing_authority=fields["发文机关"],
-        recipients=fields["主送单位"],
-        doc_type=fields["公文种类"],
-        classification=fields["密级"],
-        source_year=fields["来源年份"],
-    )
-
-    # 存入 SQLite
-    document_db.upsert_document(doc)
-
-    # 存入 FTS5（使用规范化文本，提升分词和检索质量）
-    fulltext_store.insert_fts_record(
-        doc.id, doc.file_name, doc.title,
-        doc.doc_number, doc.issuing_authority, normalized_text,
-    )
-    document_db.update_index_flags(doc.id, fts_indexed=True)
-
-    # 存入 ChromaDB（向量，使用规范化文本）
-    if text:
-        metadata = {
-            "file_name": doc.file_name,
-            "title": doc.title,
-            "doc_number": doc.doc_number,
-            "source_year": doc.source_year,
-        }
-        chunks = vector_store.chunk_document(doc.id, normalized_text, metadata)
-        if chunks:
-            embeddings = encode_texts([c["text"] for c in chunks])
-            vector_store.add_document_chunks(chunks, embeddings)
-            document_db.update_index_flags(doc.id, vector_indexed=True)
 
 
 def _delete_document(doc_id: str) -> None:

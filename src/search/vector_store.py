@@ -3,7 +3,7 @@
 import chromadb
 import numpy as np
 
-from src.config import CHROMA_DIR, CHUNK_OVERLAP, CHUNK_SIZE, ensure_dirs
+from src.config import CHROMA_DIR, CHUNK_OVERLAP, CHUNK_SIZE, VECTOR_SEARCH_TOP_K, ensure_dirs
 
 _chroma_client: chromadb.ClientAPI | None = None
 
@@ -89,6 +89,24 @@ def add_document_chunks(chunks: list[dict], embeddings: np.ndarray) -> None:
     )
 
 
+def batch_add_document_chunks(all_chunks: list[dict], all_embeddings: np.ndarray) -> None:
+    """批量写入多个文档的分块及其嵌入向量到 ChromaDB。"""
+    if not all_chunks:
+        return
+    collection = get_collection()
+    # ChromaDB 单次 upsert 有大小限制，分批处理
+    CHROMA_BATCH = 5000
+    for i in range(0, len(all_chunks), CHROMA_BATCH):
+        batch_chunks = all_chunks[i:i + CHROMA_BATCH]
+        batch_embeddings = all_embeddings[i:i + CHROMA_BATCH]
+        collection.upsert(
+            ids=[c["chunk_id"] for c in batch_chunks],
+            embeddings=batch_embeddings.tolist(),
+            documents=[c["text"] for c in batch_chunks],
+            metadatas=[c["metadata"] for c in batch_chunks],
+        )
+
+
 def delete_document_chunks(doc_id: str) -> None:
     """删除某文档的所有分块。"""
     collection = get_collection()
@@ -98,15 +116,28 @@ def delete_document_chunks(doc_id: str) -> None:
         collection.delete(ids=results["ids"])
 
 
-def search_similar(query_embedding: np.ndarray) -> dict:
-    """向量相似度检索。返回所有匹配的 ChromaDB 查询结果。"""
+def search_similar(query_embedding: np.ndarray,
+                   n_results: int = VECTOR_SEARCH_TOP_K,
+                   directories: list[str] | None = None) -> dict:
+    """向量相似度检索。返回 top-K 匹配结果，支持目录过滤。"""
     collection = get_collection()
     count = collection.count()
     if count == 0:
         return {"ids": [[]], "documents": [[]], "metadatas": [[]], "distances": [[]]}
-    actual_n = count
+
+    actual_n = min(n_results, count)
+
+    # 构建目录过滤条件
+    where = None
+    if directories:
+        if len(directories) == 1:
+            where = {"directory_root": directories[0]}
+        else:
+            where = {"directory_root": {"$in": directories}}
+
     return collection.query(
         query_embeddings=[query_embedding.tolist()],
         n_results=actual_n,
+        where=where,
         include=["documents", "metadatas", "distances"],
     )
