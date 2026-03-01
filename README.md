@@ -91,7 +91,7 @@ cd miemie_helper
 
 ### 6. 一键安装
 
-双击 `install.bat`，自动完成：检查环境 → 安装 Python 依赖 → 构建前端。
+双击 `install.bat`（或命令行运行 `python install.py`），自动完成：检查环境 → 安装 Python 依赖 → 构建前端。
 
 或者手动执行：
 
@@ -102,7 +102,7 @@ cd frontend && npm install && npm run build && cd ..
 
 ### 7. 启动应用
 
-双击 `start.bat`，自动启动后端并打开浏览器。
+双击 `start.bat`（或命令行运行 `python start.py`），自动启动后端并打开浏览器。
 
 或者手动执行：
 
