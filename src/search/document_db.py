@@ -63,6 +63,15 @@ def _init_schema(conn: sqlite3.Connection) -> None:
     """)
     conn.commit()
 
+    # 迁移：为已有数据库添加 starred 列
+    try:
+        conn.execute(
+            "ALTER TABLE indexed_directories ADD COLUMN starred INTEGER NOT NULL DEFAULT 0"
+        )
+        conn.commit()
+    except sqlite3.OperationalError:
+        pass  # 列已存在
+
 
 # ── 文档 CRUD ──
 
@@ -186,12 +195,17 @@ def update_index_flags(doc_id: str, vector_indexed: bool | None = None,
 
 def upsert_directory(directory_path: str, file_count: int = 0,
                      indexed_count: int = 0, status: str = "idle") -> None:
-    """插入或更新索引目录记录。"""
+    """插入或更新索引目录记录（保留 starred 值）。"""
     conn = get_connection()
     conn.execute(
-        """INSERT OR REPLACE INTO indexed_directories
+        """INSERT INTO indexed_directories
            (directory_path, last_scan_at, file_count, indexed_count, status)
-           VALUES (?, datetime('now'), ?, ?, ?)""",
+           VALUES (?, datetime('now'), ?, ?, ?)
+           ON CONFLICT(directory_path) DO UPDATE SET
+               last_scan_at = datetime('now'),
+               file_count = excluded.file_count,
+               indexed_count = excluded.indexed_count,
+               status = excluded.status""",
         (directory_path, file_count, indexed_count, status),
     )
     conn.commit()
@@ -227,9 +241,25 @@ def get_all_directories() -> list[DirectoryInfo]:
             indexed_count=row["indexed_count"],
             last_scan_at=row["last_scan_at"],
             status=row["status"],
+            starred=bool(row["starred"]),
         )
         for row in rows
     ]
+
+
+def toggle_directory_starred(directory_path: str) -> bool:
+    """切换目录星标状态，返回新状态。"""
+    conn = get_connection()
+    conn.execute(
+        "UPDATE indexed_directories SET starred = 1 - starred WHERE directory_path = ?",
+        (directory_path,),
+    )
+    conn.commit()
+    row = conn.execute(
+        "SELECT starred FROM indexed_directories WHERE directory_path = ?",
+        (directory_path,),
+    ).fetchone()
+    return bool(row["starred"]) if row else False
 
 
 def delete_directory(directory_path: str) -> None:

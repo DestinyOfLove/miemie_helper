@@ -5,8 +5,17 @@ from pathlib import Path
 from fastapi import APIRouter, HTTPException
 
 from src.search import document_db
-from src.search.indexer import indexing_status, start_indexing_background
-from src.search.models import DirectoryInfo, IndexRequest, IndexStatusResponse
+from src.search.indexer import (
+    indexing_status,
+    scan_directory_changes,
+    start_indexing_background,
+)
+from src.search.models import (
+    DirectoryInfo,
+    IndexRequest,
+    IndexStatusResponse,
+    ScanChangesResponse,
+)
 
 router = APIRouter(prefix="/api/index", tags=["indexing"])
 
@@ -35,6 +44,21 @@ async def get_index_status() -> IndexStatusResponse:
 async def list_indexed_directories() -> list[DirectoryInfo]:
     """列出所有已索引目录。"""
     return document_db.get_all_directories()
+
+
+@router.get("/scan-changes", response_model=ScanChangesResponse)
+async def scan_changes() -> ScanChangesResponse:
+    """扫描所有已索引目录的文件变更。"""
+    dirs = document_db.get_all_directories()
+    results = [scan_directory_changes(d.directory_path) for d in dirs]
+    return ScanChangesResponse(results=results)
+
+
+@router.post("/directory/star")
+async def toggle_star(request: IndexRequest) -> dict:
+    """切换目录星标状态。"""
+    new_state = document_db.toggle_directory_starred(request.directory)
+    return {"directory": request.directory, "starred": new_state}
 
 
 @router.delete("/directory")

@@ -32,6 +32,7 @@ class SearchRequest(BaseModel):
     query: str
     max_results: int = 0  # 0 表示不限制，返回所有匹配
     scopes: list[str] = ["content"]  # 搜索范围：content / title / all
+    directories: list[str] = []  # 搜索目录过滤，空表示搜全部
 
 
 class SearchResult(BaseModel):
@@ -84,3 +85,30 @@ class DirectoryInfo(BaseModel):
     indexed_count: int = 0
     last_scan_at: str = ""
     status: str = "idle"
+    starred: bool = False
+
+
+class FileChange(BaseModel):
+    """单个文件变更。"""
+    file_path: str
+    file_name: str
+    change_type: str  # "new" | "deleted" | "renamed" | "modified"
+    old_path: str = ""
+
+
+class DirectoryScanResult(BaseModel):
+    """目录变更扫描结果。"""
+    directory_path: str
+    new_count: int = 0
+    deleted_count: int = 0
+    renamed_count: int = 0
+    modified_count: int = 0
+    unchanged_count: int = 0
+    total_on_disk: int = 0
+    changes: list[FileChange] = []
+    error: str = ""
+
+
+class ScanChangesResponse(BaseModel):
+    """全部目录的变更扫描响应。"""
+    results: list[DirectoryScanResult] = []

@@ -3,7 +3,7 @@ import type { KeyboardEvent } from 'react'
 import { AgGridReact } from 'ag-grid-react'
 import type { ColDef, GridReadyEvent } from 'ag-grid-community'
 import { AllCommunityModule, ModuleRegistry } from 'ag-grid-community'
-import { api, type DirectoryInfo, type IndexStatus } from '../api/client'
+import { api, type DirectoryInfo, type DirectoryScanResult, type IndexStatus } from '../api/client'
 
 ModuleRegistry.registerModules([AllCommunityModule])
 
@@ -265,20 +265,45 @@ export function SearchPage() {
   const [searching, setSearching] = useState(false)
 
   // 索引管理
-  const [indexExpanded, setIndexExpanded] = useState(false)
+  const [indexExpanded, setIndexExpanded] = useState(true)
   const [dirInput, setDirInput] = useState('')
   const [indexStatus, setIndexStatus] = useState<IndexStatus | null>(null)
   const [indexing, setIndexing] = useState(false)
   const [directories, setDirectories] = useState<DirectoryInfo[]>([])
+  const [scanResults, setScanResults] = useState<Record<string, DirectoryScanResult>>({})
+  const [scanning, setScanning] = useState(false)
+  const [selectedDirs, setSelectedDirs] = useState<string[]>([])
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   const gridRef = useRef<AgGridReact<RowData>>(null)
 
   const loadDirectories = useCallback(async () => {
-    try { setDirectories(await api.indexDirectories()) } catch (_) {}
+    try {
+      const dirs = await api.indexDirectories()
+      setDirectories(dirs)
+      // 用星标目录初始化 selectedDirs（仅在 selectedDirs 为空且 dirs 存在时）
+      setSelectedDirs(prev => {
+        if (prev.length > 0) return prev
+        const starred = dirs.filter(d => d.starred).map(d => d.directory_path)
+        return starred.length > 0 ? starred : dirs.map(d => d.directory_path)
+      })
+    } catch (_) {}
   }, [])
 
-  useEffect(() => { loadDirectories() }, [loadDirectories])
+  const doScanChanges = useCallback(async () => {
+    setScanning(true)
+    try {
+      const res = await api.scanChanges()
+      const map: Record<string, DirectoryScanResult> = {}
+      for (const r of res.results) map[r.directory_path] = r
+      setScanResults(map)
+    } catch (_) {}
+    setScanning(false)
+  }, [])
+
+  useEffect(() => {
+    loadDirectories().then(() => doScanChanges())
+  }, [loadDirectories, doScanChanges])
 
   // ── Tag 输入处理 ──────────────────────────────────────────────
   const commitTag = () => {
@@ -346,7 +371,7 @@ export function SearchPage() {
     try {
       // 将所有 tag 用空格连接成查询词发给后端
       const query = allTerms.join(' ')
-      const res = await api.search(query, scopes)
+      const res = await api.search(query, scopes, selectedDirs)
       const merged = new Map<string, RowData>()
 
       for (const r of res.fulltext_results) {
@@ -435,21 +460,42 @@ export function SearchPage() {
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
                   <thead>
                     <tr style={{ background: '#f5f5f5' }}>
-                      {['目录', '文件数', '已索引', '状态', '最后扫描'].map(h => (
+                      {['目录', '文件数', '已索引', '状态', '变更检测', '最后扫描'].map(h => (
                         <th key={h} style={{ padding: '6px 10px', textAlign: 'left', borderBottom: '1px solid #e0e0e0', fontWeight: 500 }}>{h}</th>
                       ))}
                     </tr>
                   </thead>
                   <tbody>
-                    {directories.map(d => (
-                      <tr key={d.directory_path}>
-                        <td style={{ padding: '6px 10px', wordBreak: 'break-all' }}>{d.directory_path}</td>
-                        <td style={{ padding: '6px 10px' }}>{d.file_count}</td>
-                        <td style={{ padding: '6px 10px' }}>{d.indexed_count}</td>
-                        <td style={{ padding: '6px 10px' }}>{d.status}</td>
-                        <td style={{ padding: '6px 10px' }}>{d.last_scan_at}</td>
-                      </tr>
-                    ))}
+                    {directories.map(d => {
+                      const scan = scanResults[d.directory_path]
+                      let changeCell: React.ReactNode
+                      if (scanning) {
+                        changeCell = <span style={{ color: '#999' }}>扫描中...</span>
+                      } else if (!scan) {
+                        changeCell = <span style={{ color: '#999' }}>-</span>
+                      } else if (scan.error) {
+                        changeCell = <span style={{ color: '#D32F2F' }} title={scan.error}>错误</span>
+                      } else {
+                        const parts: React.ReactNode[] = []
+                        if (scan.new_count > 0) parts.push(<span key="new" style={{ color: '#2E7D32' }}>+{scan.new_count} 新增</span>)
+                        if (scan.deleted_count > 0) parts.push(<span key="del" style={{ color: '#D32F2F' }}>-{scan.deleted_count} 删除</span>)
+                        if (scan.modified_count > 0) parts.push(<span key="mod" style={{ color: '#E65100' }}>~{scan.modified_count} 修改</span>)
+                        if (scan.renamed_count > 0) parts.push(<span key="ren" style={{ color: '#F57C00' }}>{scan.renamed_count} 重命名</span>)
+                        changeCell = parts.length > 0
+                          ? <span style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>{parts}</span>
+                          : <span style={{ color: '#4CAF50' }}>无变更</span>
+                      }
+                      return (
+                        <tr key={d.directory_path}>
+                          <td style={{ padding: '6px 10px', wordBreak: 'break-all' }}>{d.directory_path}</td>
+                          <td style={{ padding: '6px 10px' }}>{d.file_count}</td>
+                          <td style={{ padding: '6px 10px' }}>{d.indexed_count}</td>
+                          <td style={{ padding: '6px 10px' }}>{d.status}</td>
+                          <td style={{ padding: '6px 10px' }}>{changeCell}</td>
+                          <td style={{ padding: '6px 10px' }}>{d.last_scan_at}</td>
+                        </tr>
+                      )
+                    })}
                   </tbody>
                 </table>
               </div>
@@ -486,6 +532,71 @@ export function SearchPage() {
           )
         })}
       </div>
+
+      {/* 搜索目录选择（仅目录数 > 1 时显示） */}
+      {directories.length > 1 && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10, flexWrap: 'wrap' }}>
+          <Tip text="选择要搜索的目录范围，可多选。星标目录在页面加载时自动选中">
+            <span style={{ fontSize: 13, color: '#666', cursor: 'help', borderBottom: '1px dashed #aaa' }}>搜索目录：</span>
+          </Tip>
+          {directories.map(d => {
+            const dirName = d.directory_path.replace(/\\/g, '/').split('/').filter(Boolean).pop() || d.directory_path
+            const active = selectedDirs.includes(d.directory_path)
+            return (
+              <span key={d.directory_path} style={{ display: 'inline-flex', alignItems: 'center', gap: 2 }}>
+                <Tip text={d.directory_path}>
+                  <button
+                    onClick={() => {
+                      setSelectedDirs(prev => {
+                        if (active) {
+                          return prev.length > 1 ? prev.filter(x => x !== d.directory_path) : prev
+                        }
+                        return [...prev, d.directory_path]
+                      })
+                    }}
+                    style={{
+                      padding: '4px 14px',
+                      borderRadius: '20px 0 0 20px',
+                      border: `1px solid ${active ? '#1976D2' : '#ccc'}`,
+                      borderRight: 'none',
+                      background: active ? '#E3F2FD' : '#fff',
+                      color: active ? '#1565C0' : '#555',
+                      cursor: 'pointer',
+                      fontSize: 13,
+                      fontWeight: active ? 600 : 400,
+                    }}
+                  >
+                    {dirName}
+                  </button>
+                </Tip>
+                <button
+                  onClick={async () => {
+                    try {
+                      const res = await api.toggleDirectoryStar(d.directory_path)
+                      setDirectories(prev => prev.map(dir =>
+                        dir.directory_path === d.directory_path ? { ...dir, starred: res.starred } : dir
+                      ))
+                    } catch (_) {}
+                  }}
+                  title={d.starred ? '取消星标' : '设为默认'}
+                  style={{
+                    padding: '4px 8px',
+                    borderRadius: '0 20px 20px 0',
+                    border: `1px solid ${active ? '#1976D2' : '#ccc'}`,
+                    background: active ? '#E3F2FD' : '#fff',
+                    cursor: 'pointer',
+                    fontSize: 14,
+                    lineHeight: 1,
+                    color: d.starred ? '#F9A825' : '#bbb',
+                  }}
+                >
+                  {d.starred ? '★' : '☆'}
+                </button>
+              </span>
+            )
+          })}
+        </div>
+      )}
 
       {/* Tag 输入框 */}
       <div style={{ display: 'flex', gap: 12, marginBottom: 10 }}>
@@ -593,8 +704,7 @@ export function SearchPage() {
         }
         .tip-wrap:hover .tip-bubble { visibility: visible; opacity: 1; }
         .ag-cell { overflow: visible !important; }
-        .ag-cell-wrapper, .ag-cell-value { height: 100%; }
-        .copyable-cell { height: 100%; display: flex; flex-direction: column; }
+        .copyable-cell { position: relative; }
         .copyable-cell:hover .copy-btn { opacity: 1 !important; }
       `}</style>
     </div>

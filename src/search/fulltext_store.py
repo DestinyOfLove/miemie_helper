@@ -87,10 +87,12 @@ _SCOPE_COLS = {
 }
 
 
-def search_fulltext(query: str, scopes: list[str] | None = None) -> list[dict]:
+def search_fulltext(query: str, scopes: list[str] | None = None,
+                    directories: list[str] | None = None) -> list[dict]:
     """全文检索。返回 [{doc_id, rank, snippet}, ...]，不限数量。
 
     scopes: ["content"] | ["title"] | ["all"] 或任意组合，控制搜索范围。
+    directories: 限制搜索的目录列表，None/空表示搜全部。
     """
     _ensure_fts_table()
     segmented_query = segment_text(query)
@@ -112,14 +114,27 @@ def search_fulltext(query: str, scopes: list[str] | None = None) -> list[dict]:
 
     conn = get_connection()
     try:
-        cursor = conn.execute(
-            """SELECT doc_id, rank,
-                      snippet(documents_fts, 5, '<mark>', '</mark>', '...', 64) as snippet
-               FROM documents_fts
-               WHERE documents_fts MATCH ?
-               ORDER BY rank""",
-            (fts_query,),
-        )
+        if directories:
+            placeholders = ",".join("?" for _ in directories)
+            cursor = conn.execute(
+                f"""SELECT f.doc_id, f.rank,
+                          snippet(documents_fts, 5, '<mark>', '</mark>', '...', 64) as snippet
+                   FROM documents_fts f
+                   JOIN documents d ON d.id = f.doc_id
+                   WHERE documents_fts MATCH ?
+                     AND d.directory_root IN ({placeholders})
+                   ORDER BY f.rank""",
+                (fts_query, *directories),
+            )
+        else:
+            cursor = conn.execute(
+                """SELECT doc_id, rank,
+                          snippet(documents_fts, 5, '<mark>', '</mark>', '...', 64) as snippet
+                   FROM documents_fts
+                   WHERE documents_fts MATCH ?
+                   ORDER BY rank""",
+                (fts_query,),
+            )
         return [
             {"doc_id": row[0], "rank": row[1], "snippet": row[2]}
             for row in cursor

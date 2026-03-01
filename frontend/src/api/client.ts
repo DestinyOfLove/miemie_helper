@@ -27,6 +27,30 @@ export interface DirectoryInfo {
   indexed_count: number
   last_scan_at: string
   status: string
+  starred: boolean
+}
+
+export interface FileChange {
+  file_path: string
+  file_name: string
+  change_type: string
+  old_path: string
+}
+
+export interface DirectoryScanResult {
+  directory_path: string
+  new_count: number
+  deleted_count: number
+  renamed_count: number
+  modified_count: number
+  unchanged_count: number
+  total_on_disk: number
+  changes: FileChange[]
+  error: string
+}
+
+export interface ScanChangesResponse {
+  results: DirectoryScanResult[]
 }
 
 export interface IndexStatus {
@@ -55,11 +79,11 @@ export interface ArchiveStatus {
 }
 
 export const api = {
-  search: async (query: string, scopes: string[] = ['content']): Promise<DualSearchResponse> => {
+  search: async (query: string, scopes: string[] = ['content'], directories: string[] = []): Promise<DualSearchResponse> => {
     const res = await fetch(`${BASE}/search/`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ query, max_results: 0, scopes }),
+      body: JSON.stringify({ query, max_results: 0, scopes, directories }),
     })
     if (!res.ok) throw new Error(await res.text())
     return res.json()
@@ -82,6 +106,22 @@ export const api = {
 
   indexDirectories: async (): Promise<DirectoryInfo[]> => {
     const res = await fetch(`${BASE}/index/directories`)
+    if (!res.ok) throw new Error(await res.text())
+    return res.json()
+  },
+
+  scanChanges: async (): Promise<ScanChangesResponse> => {
+    const res = await fetch(`${BASE}/index/scan-changes`)
+    if (!res.ok) throw new Error(await res.text())
+    return res.json()
+  },
+
+  toggleDirectoryStar: async (directory: string): Promise<{ directory: string; starred: boolean }> => {
+    const res = await fetch(`${BASE}/index/directory/star`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ directory }),
+    })
     if (!res.ok) throw new Error(await res.text())
     return res.json()
   },

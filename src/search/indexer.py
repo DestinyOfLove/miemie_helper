@@ -10,7 +10,12 @@ from src.core.parser import parse_document_fields
 from src.core.text_utils import normalize_text_for_indexing
 from src.search import document_db, fulltext_store, vector_store
 from src.search.embedding import encode_texts
-from src.search.models import DocumentRecord, IndexStatusResponse
+from src.search.models import (
+    DirectoryScanResult,
+    DocumentRecord,
+    FileChange,
+    IndexStatusResponse,
+)
 
 
 class IndexingStatus:
@@ -235,6 +240,93 @@ def _delete_document(doc_id: str) -> None:
     fulltext_store.delete_fts_record(doc_id)
     vector_store.delete_document_chunks(doc_id)
     document_db.delete_document(doc_id)
+
+
+def scan_directory_changes(directory: str) -> DirectoryScanResult:
+    """轻量扫描目录变更（仅文件系统元数据 + MD5，不做文本提取）。"""
+    root = Path(directory).resolve()
+    directory_str = str(root)
+
+    try:
+        all_files = scan_directory(root)
+    except Exception as e:
+        return DirectoryScanResult(directory_path=directory_str, error=str(e))
+
+    known_files = document_db.get_known_files(directory_str)
+    current_paths: set[str] = set()
+
+    new_files: list[tuple[Path, str]] = []  # (path, md5)
+    deleted_files: list[tuple[str, str]] = []  # (path, md5)
+    modified_files: list[Path] = []
+    unchanged_count = 0
+
+    for file_path in all_files:
+        path_str = str(file_path)
+        current_paths.add(path_str)
+
+        if path_str not in known_files:
+            md5 = compute_file_hash(file_path)
+            new_files.append((file_path, md5))
+        else:
+            known = known_files[path_str]
+            stat = file_path.stat()
+            if stat.st_mtime == known["file_mtime"] and stat.st_size == known["file_size"]:
+                unchanged_count += 1
+                continue
+            new_hash = compute_file_hash(file_path)
+            if new_hash != known["file_hash"]:
+                modified_files.append(file_path)
+            else:
+                unchanged_count += 1
+
+    for path_str, info in known_files.items():
+        if path_str not in current_paths:
+            deleted_files.append((path_str, info["file_hash"]))
+
+    # 重命名检测：新文件的 MD5 匹配到某个已删除文件的 MD5
+    deleted_by_hash: dict[str, str] = {md5: path for path, md5 in deleted_files}
+    changes: list[FileChange] = []
+    renamed_count = 0
+    actual_new: list[tuple[Path, str]] = []
+
+    for file_path, md5 in new_files:
+        if md5 in deleted_by_hash:
+            old_path = deleted_by_hash.pop(md5)
+            changes.append(FileChange(
+                file_path=str(file_path),
+                file_name=file_path.name,
+                change_type="renamed",
+                old_path=old_path,
+            ))
+            renamed_count += 1
+        else:
+            actual_new.append((file_path, md5))
+
+    for file_path, _ in actual_new:
+        changes.append(FileChange(
+            file_path=str(file_path), file_name=file_path.name, change_type="new",
+        ))
+
+    for path_str in deleted_by_hash.values():
+        changes.append(FileChange(
+            file_path=path_str, file_name=Path(path_str).name, change_type="deleted",
+        ))
+
+    for file_path in modified_files:
+        changes.append(FileChange(
+            file_path=str(file_path), file_name=file_path.name, change_type="modified",
+        ))
+
+    return DirectoryScanResult(
+        directory_path=directory_str,
+        new_count=len(actual_new),
+        deleted_count=len(deleted_by_hash),
+        renamed_count=renamed_count,
+        modified_count=len(modified_files),
+        unchanged_count=unchanged_count,
+        total_on_disk=len(all_files),
+        changes=changes,
+    )
 
 
 def start_indexing_background(directory: str) -> bool:
