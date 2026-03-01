@@ -703,7 +703,6 @@ export function SearchPage() {
           border: 5px solid transparent; border-top-color: #333;
         }
         .tip-wrap:hover .tip-bubble { visibility: visible; opacity: 1; }
-        .ag-cell { overflow: visible !important; }
         .copyable-cell { position: relative; }
         .copyable-cell:hover .copy-btn { opacity: 1 !important; }
       `}</style>
