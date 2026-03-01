@@ -4,8 +4,6 @@ import { AgGridReact } from 'ag-grid-react'
 import type { ColDef, GridReadyEvent } from 'ag-grid-community'
 import { AllCommunityModule, ModuleRegistry } from 'ag-grid-community'
 import { api, type DirectoryInfo, type IndexStatus } from '../api/client'
-import 'ag-grid-community/styles/ag-grid.css'
-import 'ag-grid-community/styles/ag-theme-quartz.css'
 
 ModuleRegistry.registerModules([AllCommunityModule])
 
@@ -566,7 +564,7 @@ export function SearchPage() {
       {count && <div style={{ fontSize: 13, color: '#888', marginBottom: 8 }}>{count}</div>}
 
       {/* AG Grid */}
-      <div className="ag-theme-quartz" style={{ width: '100%' }}>
+      <div style={{ width: '100%' }}>
         <AgGridReact
           ref={gridRef}
           rowData={rows}
@@ -594,6 +592,9 @@ export function SearchPage() {
           border: 5px solid transparent; border-top-color: #333;
         }
         .tip-wrap:hover .tip-bubble { visibility: visible; opacity: 1; }
+        .ag-cell { overflow: visible !important; }
+        .ag-cell-wrapper, .ag-cell-value { height: 100%; }
+        .copyable-cell { height: 100%; display: flex; flex-direction: column; }
         .copyable-cell:hover .copy-btn { opacity: 1 !important; }
       `}</style>
     </div>
