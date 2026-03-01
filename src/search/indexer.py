@@ -155,6 +155,7 @@ def run_indexing(directory: str) -> None:
 
         # ── Phase 2: 加载已知文件 + 分类变更 ──
         known_files = document_db.get_known_files(directory_str)
+        known_hashes: set[str] = {info["file_hash"] for info in known_files.values()}
 
         to_add: list[Path] = []
         to_update: list[tuple[Path, str, str]] = []  # (path, old_doc_id, new_hash)
@@ -167,7 +168,12 @@ def run_indexing(directory: str) -> None:
             current_paths.add(path_str)
 
             if path_str not in known_files:
-                to_add.append(file_path)
+                # 检查内容是否已被索引（同内容不同路径）
+                file_hash = compute_file_hash(file_path)
+                if file_hash in known_hashes:
+                    indexing_status.skipped += 1
+                else:
+                    to_add.append(file_path)
             else:
                 known = known_files[path_str]
                 stat = file_path.stat()
@@ -460,8 +466,11 @@ def scan_directory_changes(directory: str) -> DirectoryScanResult:
 
     # 重命名检测：新文件的 MD5 匹配到某个已删除文件的 MD5
     deleted_by_hash: dict[str, str] = {md5: path for path, md5 in deleted_files}
+    # 已知哈希集合：用于识别内容重复文件（路径不同但内容相同，已被索引）
+    known_hashes: set[str] = {info["file_hash"] for info in known_files.values()}
     changes: list[FileChange] = []
     renamed_count = 0
+    duplicate_count = 0
     actual_new: list[tuple[Path, str]] = []
 
     for file_path, md5 in new_files:
@@ -474,6 +483,10 @@ def scan_directory_changes(directory: str) -> DirectoryScanResult:
                 old_path=old_path,
             ))
             renamed_count += 1
+        elif md5 in known_hashes:
+            # 内容已被索引（同内容不同路径），视为已索引
+            unchanged_count += 1
+            duplicate_count += 1
         else:
             actual_new.append((file_path, md5))
 
