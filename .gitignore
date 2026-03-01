@@ -28,6 +28,7 @@ build/
 
 # Runtime data
 .miemie_data/
+.miemie_helper/
 
 # OS
 .DS_Store

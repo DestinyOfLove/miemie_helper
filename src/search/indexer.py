@@ -1,8 +1,6 @@
-"""增量索引编排器：扫描→变更检测→多线程提取→索引。"""
+"""增量索引编排器：扫描→变更检测→提取→索引。"""
 
-import os
 import threading
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 from src.core.extractor import compute_file_hash, extract_text
@@ -17,9 +15,6 @@ from src.search.models import (
     FileChange,
     IndexStatusResponse,
 )
-
-# 线程池大小：CPU 核心数，但不超过 8（避免内存压力过大，OCR 比较吃内存）
-_MAX_WORKERS = min(os.cpu_count() or 4, 8)
 
 
 class IndexingStatus:
@@ -133,18 +128,25 @@ def run_indexing(directory: str) -> None:
             _delete_document(doc_id)
             indexing_status.deleted += 1
 
-        # Phase 5: 先删除待更新文件的旧记录
-        for _, old_doc_id in to_update:
-            _delete_document(old_doc_id)
+        # Phase 5: 处理新增和更新
+        for file_path in to_add:
+            indexing_status.current_file = file_path.name
+            try:
+                _index_file(file_path, root, directory_str)
+                indexing_status.added += 1
+            except Exception as e:
+                indexing_status.errors.append(f"{file_path.name}: {e}")
+            indexing_status.processed_files += 1
 
-        # Phase 6: 多线程提取+解析，再批量存储
-        all_to_index: list[tuple[Path, str]] = (
-            [(p, "add") for p in to_add]
-            + [(p, "update") for p, _ in to_update]
-        )
-
-        if all_to_index:
-            _index_files_parallel(all_to_index, root, directory_str)
+        for file_path, old_doc_id in to_update:
+            indexing_status.current_file = file_path.name
+            try:
+                _delete_document(old_doc_id)
+                _index_file(file_path, root, directory_str)
+                indexing_status.updated += 1
+            except Exception as e:
+                indexing_status.errors.append(f"{file_path.name}: {e}")
+            indexing_status.processed_files += 1
 
         # 完成
         indexed_count = (
@@ -166,8 +168,8 @@ def run_indexing(directory: str) -> None:
         indexing_status.is_running = False
 
 
-def _extract_and_parse(file_path: Path, root: Path, directory_str: str) -> DocumentRecord | None:
-    """提取文本并解析字段（CPU 密集，适合并行）。返回 DocumentRecord 或 None。"""
+def _index_file(file_path: Path, root: Path, directory_str: str) -> None:
+    """索引单个文件：提取→解析→存入 SQLite + FTS5 + ChromaDB。"""
     stat = file_path.stat()
     file_hash = compute_file_hash(file_path)
     text, method = extract_text(file_path)
@@ -185,7 +187,7 @@ def _extract_and_parse(file_path: Path, root: Path, directory_str: str) -> Docum
     # 规范化文本：去掉所有换行，拼成单行
     normalized_text = normalize_text_for_indexing(text) if text else text
 
-    return DocumentRecord(
+    doc = DocumentRecord(
         id=file_hash,
         file_path=str(file_path),
         file_name=file_path.name,
@@ -205,91 +207,29 @@ def _extract_and_parse(file_path: Path, root: Path, directory_str: str) -> Docum
         source_year=fields["来源年份"],
     )
 
+    # 存入 SQLite
+    document_db.upsert_document(doc)
 
-def _index_files_parallel(
-    files: list[tuple[Path, str]],
-    root: Path,
-    directory_str: str,
-) -> None:
-    """多线程提取+解析文件，按批次存入数据库。
+    # 存入 FTS5（使用规范化文本，提升分词和检索质量）
+    fulltext_store.insert_fts_record(
+        doc.id, doc.file_name, doc.title,
+        doc.doc_number, doc.issuing_authority, normalized_text,
+    )
+    document_db.update_index_flags(doc.id, fts_indexed=True)
 
-    流水线设计：
-      1. ThreadPoolExecutor 并行执行 CPU 密集的文本提取+解析
-      2. 主线程收集结果，每攒够一批就写入存储（SQLite + FTS5 + ChromaDB）
-    """
-    STORE_BATCH_SIZE = 20  # 每攒够 N 个结果就批量存储一次
-
-    pending_docs: list[tuple[DocumentRecord, str]] = []  # (doc, change_type)
-
-    def _flush_batch(batch: list[tuple[DocumentRecord, str]]) -> None:
-        """将一批提取结果写入所有存储层。"""
-        for doc, change_type in batch:
-            # SQLite
-            document_db.upsert_document(doc)
-
-            # FTS5
-            fulltext_store.insert_fts_record(
-                doc.id, doc.file_name, doc.title,
-                doc.doc_number, doc.issuing_authority, doc.extracted_text,
-            )
-            document_db.update_index_flags(doc.id, fts_indexed=True)
-
-        # ChromaDB + Embedding 按批次处理（减少模型调用开销）
-        chunks_all: list[dict] = []
-        doc_ids_with_vectors: list[str] = []
-        for doc, _ in batch:
-            if doc.extracted_text:
-                metadata = {
-                    "file_name": doc.file_name,
-                    "title": doc.title,
-                    "doc_number": doc.doc_number,
-                    "source_year": doc.source_year,
-                }
-                chunks = vector_store.chunk_document(doc.id, doc.extracted_text, metadata)
-                if chunks:
-                    chunks_all.extend(chunks)
-                    doc_ids_with_vectors.append(doc.id)
-
-        if chunks_all:
-            embeddings = encode_texts([c["text"] for c in chunks_all])
-            vector_store.add_document_chunks(chunks_all, embeddings)
-            for doc_id in doc_ids_with_vectors:
-                document_db.update_index_flags(doc_id, vector_indexed=True)
-
-    with ThreadPoolExecutor(max_workers=_MAX_WORKERS) as executor:
-        future_map = {}
-        for file_path, change_type in files:
-            future = executor.submit(_extract_and_parse, file_path, root, directory_str)
-            future_map[future] = (file_path, change_type)
-
-        for future in as_completed(future_map):
-            file_path, change_type = future_map[future]
-            indexing_status.current_file = file_path.name
-
-            try:
-                doc = future.result()
-                if doc is not None:
-                    pending_docs.append((doc, change_type))
-                    if change_type == "add":
-                        indexing_status.added += 1
-                    else:
-                        indexing_status.updated += 1
-                else:
-                    indexing_status.errors.append(f"{file_path.name}: 提取失败")
-            except Exception as e:
-                indexing_status.errors.append(f"{file_path.name}: {e}")
-
-            indexing_status.processed_files += 1
-
-            # 攒够一批就写入存储
-            if len(pending_docs) >= STORE_BATCH_SIZE:
-                _flush_batch(pending_docs)
-                pending_docs.clear()
-
-    # 处理最后不足一批的剩余
-    if pending_docs:
-        _flush_batch(pending_docs)
-        pending_docs.clear()
+    # 存入 ChromaDB（向量，使用规范化文本）
+    if text:
+        metadata = {
+            "file_name": doc.file_name,
+            "title": doc.title,
+            "doc_number": doc.doc_number,
+            "source_year": doc.source_year,
+        }
+        chunks = vector_store.chunk_document(doc.id, normalized_text, metadata)
+        if chunks:
+            embeddings = encode_texts([c["text"] for c in chunks])
+            vector_store.add_document_chunks(chunks, embeddings)
+            document_db.update_index_flags(doc.id, vector_indexed=True)
 
 
 def _delete_document(doc_id: str) -> None:

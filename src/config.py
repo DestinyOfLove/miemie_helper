@@ -8,7 +8,7 @@ PROJECT_ROOT = Path(__file__).parent.parent
 
 # 运行时数据目录（可通过环境变量覆盖）
 DATA_DIR = Path(
-    os.environ.get("MIEMIE_DATA_DIR", PROJECT_ROOT / ".miemie_data")
+    os.environ.get("MIEMIE_DATA_DIR", PROJECT_ROOT / ".miemie_helper" / "doc_search")
 ).resolve()
 
 # SQLite 数据库
