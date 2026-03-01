@@ -148,9 +148,10 @@ def search_page():
                     break
                 total = status.total_files or 1
                 done = status.processed_files + status.skipped
+                pct = int(done / total * 100)
                 progress.set_value(done / total)
                 status_label.text = (
-                    f"{status.phase} | 处理中: {status.current_file} | "
+                    f"[{done}/{total} {pct}%] {status.current_file} | "
                     f"新增 {status.added} / 更新 {status.updated} / "
                     f"跳过 {status.skipped} / 删除 {status.deleted}"
                 )

@@ -61,6 +61,11 @@ def _init_schema(conn: sqlite3.Connection) -> None:
             status TEXT NOT NULL DEFAULT 'idle',
             starred INTEGER NOT NULL DEFAULT 0
         );
+
+        -- 启动时清理上次崩溃残留的中间状态
+        UPDATE indexed_directories
+            SET status = 'incomplete'
+            WHERE status IN ('scanning', 'indexing', 'rebuilding');
     """)
     conn.commit()
 
@@ -223,14 +228,23 @@ def update_directory_status(directory_path: str, status: str,
 
 
 def get_all_directories() -> list[DirectoryInfo]:
-    """获取所有已索引目录信息。"""
+    """获取所有已索引目录信息。indexed_count 实时从 documents 表统计。"""
     conn = get_connection()
-    rows = conn.execute("SELECT * FROM indexed_directories").fetchall()
+    rows = conn.execute("""
+        SELECT d.*,
+               COALESCE(c.cnt, 0) AS real_indexed_count
+        FROM indexed_directories d
+        LEFT JOIN (
+            SELECT directory_root, COUNT(*) AS cnt
+            FROM documents
+            GROUP BY directory_root
+        ) c ON c.directory_root = d.directory_path
+    """).fetchall()
     return [
         DirectoryInfo(
             directory_path=row["directory_path"],
             file_count=row["file_count"],
-            indexed_count=row["indexed_count"],
+            indexed_count=row["real_indexed_count"],
             last_scan_at=row["last_scan_at"],
             status=row["status"],
             starred=bool(row["starred"]),
