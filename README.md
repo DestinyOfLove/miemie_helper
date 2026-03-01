@@ -85,30 +85,26 @@ npm --version
 ### 5. 获取项目代码
 
 ```powershell
-git clone <仓库地址>
+git clone https://github.com/DestinyOfLove/miemie_helper.git
 cd miemie_helper
 ```
 
-### 6. 安装 Python 依赖
+### 6. 一键安装
+
+双击 `install.bat`，自动完成：检查环境 → 安装 Python 依赖 → 构建前端。
+
+或者手动执行：
 
 ```powershell
 uv sync
+cd frontend && npm install && npm run build && cd ..
 ```
 
-首次运行会自动创建虚拟环境并安装所有依赖。
+### 7. 启动应用
 
-### 7. 构建前端
+双击 `start.bat`，自动启动后端并打开浏览器。
 
-```powershell
-cd frontend
-npm install
-npm run build
-cd ..
-```
-
-构建产物会输出到项目根目录的 `static/` 目录，后端会自动读取。
-
-### 8. 启动应用
+或者手动执行：
 
 ```powershell
 uv run python main.py
