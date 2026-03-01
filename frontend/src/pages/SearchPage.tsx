@@ -506,8 +506,47 @@ export function SearchPage() {
             </div>
             {indexStatus && (
               <div style={{ marginTop: 10 }}>
-                <div style={{ padding: '8px 12px', background: '#f5f5f5', borderRadius: 6, fontSize: 13, color: '#555' }}>
-                  {indexStatus.phase} | {indexStatus.current_file || '-'} | 新增 {indexStatus.added} / 更新 {indexStatus.updated} / 跳过 {indexStatus.skipped}
+                <div style={{ padding: '10px 12px', background: '#f5f5f5', borderRadius: 6, fontSize: 13, color: '#555' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: indexStatus.is_running && indexStatus.total_files > 0 ? 8 : 0 }}>
+                    <span style={{
+                      padding: '2px 8px', borderRadius: 4, fontSize: 12, fontWeight: 600, color: '#fff',
+                      background: indexStatus.phase === 'complete' ? '#4CAF50'
+                        : indexStatus.phase === 'error' ? '#D32F2F'
+                        : indexStatus.is_running ? '#1976D2' : '#9E9E9E',
+                    }}>
+                      {{ scanning: '扫描中', extracting: '提取中', indexing: '写入索引', embedding: '生成向量', complete: '完成', error: '出错', idle: '空闲' }[indexStatus.phase] || indexStatus.phase}
+                    </span>
+                    {indexStatus.is_running && indexStatus.total_files > 0 && (
+                      <span style={{ fontWeight: 500 }}>
+                        {indexStatus.processed_files} / {indexStatus.total_files} 文件
+                      </span>
+                    )}
+                    {indexStatus.current_file && (
+                      <span style={{ color: '#888', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}
+                        title={indexStatus.current_file}>
+                        {indexStatus.current_file}
+                      </span>
+                    )}
+                  </div>
+                  {/* 进度条 */}
+                  {indexStatus.is_running && indexStatus.total_files > 0 && (
+                    <div style={{ background: '#e0e0e0', borderRadius: 4, height: 6, overflow: 'hidden', marginBottom: 6 }}>
+                      <div style={{
+                        height: '100%', borderRadius: 4, transition: 'width 0.3s ease',
+                        width: `${Math.round((indexStatus.processed_files / indexStatus.total_files) * 100)}%`,
+                        background: 'linear-gradient(90deg, #42A5F5, #1976D2)',
+                      }} />
+                    </div>
+                  )}
+                  {/* 计数器 —— 完成或有计数时显示 */}
+                  {(indexStatus.added > 0 || indexStatus.updated > 0 || indexStatus.deleted > 0 || indexStatus.skipped > 0 || indexStatus.phase === 'complete') && (
+                    <div style={{ fontSize: 12, color: '#777', display: 'flex', gap: 12 }}>
+                      {indexStatus.added > 0 && <span style={{ color: '#2E7D32' }}>+{indexStatus.added} 新增</span>}
+                      {indexStatus.updated > 0 && <span style={{ color: '#E65100' }}>~{indexStatus.updated} 更新</span>}
+                      {indexStatus.deleted > 0 && <span style={{ color: '#D32F2F' }}>-{indexStatus.deleted} 删除</span>}
+                      {indexStatus.skipped > 0 && <span>{indexStatus.skipped} 跳过</span>}
+                    </div>
+                  )}
                 </div>
                 {indexStatus.warnings?.length > 0 && (
                   <div style={{ marginTop: 6, padding: '6px 12px', background: '#FFF8E1', border: '1px solid #FFE082', borderRadius: 6, fontSize: 12, color: '#F57F17' }}>
