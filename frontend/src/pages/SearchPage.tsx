@@ -365,6 +365,23 @@ export function SearchPage() {
     } catch (e: unknown) { alert(String(e)) }
   }
 
+  const refreshDirectory = async (dir: string) => {
+    try {
+      await api.indexStart(dir)
+      setIndexing(true)
+      pollRef.current = setInterval(async () => {
+        const s = await api.indexStatus()
+        setIndexStatus(s)
+        if (!s.is_running && ['complete', 'error', 'idle'].includes(s.phase)) {
+          clearInterval(pollRef.current!)
+          setIndexing(false)
+          await loadDirectories()
+          await doScanChanges()
+        }
+      }, 600)
+    } catch (e: unknown) { alert(String(e)) }
+  }
+
   const rebuildDirectory = async (dir: string) => {
     if (!confirm(`确定重建「${dir}」的索引？将删除旧索引并重新提取全部文件。`)) return
     try {
@@ -488,8 +505,20 @@ export function SearchPage() {
               </button>
             </div>
             {indexStatus && (
-              <div style={{ marginTop: 10, padding: '8px 12px', background: '#f5f5f5', borderRadius: 6, fontSize: 13, color: '#555' }}>
-                {indexStatus.phase} | {indexStatus.current_file || '-'} | 新增 {indexStatus.added} / 更新 {indexStatus.updated} / 跳过 {indexStatus.skipped}
+              <div style={{ marginTop: 10 }}>
+                <div style={{ padding: '8px 12px', background: '#f5f5f5', borderRadius: 6, fontSize: 13, color: '#555' }}>
+                  {indexStatus.phase} | {indexStatus.current_file || '-'} | 新增 {indexStatus.added} / 更新 {indexStatus.updated} / 跳过 {indexStatus.skipped}
+                </div>
+                {indexStatus.warnings?.length > 0 && (
+                  <div style={{ marginTop: 6, padding: '6px 12px', background: '#FFF8E1', border: '1px solid #FFE082', borderRadius: 6, fontSize: 12, color: '#F57F17' }}>
+                    {indexStatus.warnings.map((w, i) => <div key={i} style={{ whiteSpace: 'pre-wrap' }}>{w}</div>)}
+                  </div>
+                )}
+                {indexStatus.errors?.length > 0 && (
+                  <div style={{ marginTop: 6, padding: '6px 12px', background: '#FFEBEE', border: '1px solid #EF9A9A', borderRadius: 6, fontSize: 12, color: '#C62828' }}>
+                    {indexStatus.errors.map((e, i) => <div key={i}>{e}</div>)}
+                  </div>
+                )}
               </div>
             )}
             {directories.length > 0 && (
@@ -532,6 +561,26 @@ export function SearchPage() {
                           <td style={{ padding: '6px 10px' }}>{changeCell}</td>
                           <td style={{ padding: '6px 10px' }}>{d.last_scan_at}</td>
                           <td style={{ padding: '6px 10px', whiteSpace: 'nowrap' }}>
+                            {(() => {
+                              const scan = scanResults[d.directory_path]
+                              const hasChanges = scan && !scan.error && (scan.new_count + scan.deleted_count + scan.modified_count + scan.renamed_count > 0)
+                              return (
+                                <button
+                                  onClick={() => refreshDirectory(d.directory_path)}
+                                  disabled={indexing}
+                                  title="增量刷新：只处理新增、修改、删除的文件"
+                                  style={{
+                                    padding: '2px 10px', fontSize: 12, marginRight: 6,
+                                    background: hasChanges ? '#4CAF50' : '#9E9E9E', color: '#fff', border: 'none',
+                                    borderRadius: 4, cursor: indexing ? 'not-allowed' : 'pointer',
+                                    opacity: indexing ? 0.5 : 1,
+                                    fontWeight: hasChanges ? 600 : 400,
+                                  }}
+                                >
+                                  刷新
+                                </button>
+                              )
+                            })()}
                             <button
                               onClick={() => rebuildDirectory(d.directory_path)}
                               disabled={indexing}

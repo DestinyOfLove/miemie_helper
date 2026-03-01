@@ -39,6 +39,7 @@ class IndexingStatus:
         self.skipped: int = 0
         self.current_file: str = ""
         self.errors: list[str] = []
+        self.warnings: list[str] = []
 
     def reset(self, directory: str) -> None:
         with self._lock:
@@ -53,6 +54,7 @@ class IndexingStatus:
             self.skipped = 0
             self.current_file = ""
             self.errors = []
+            self.warnings = []
 
     def to_response(self) -> IndexStatusResponse:
         with self._lock:
@@ -68,6 +70,7 @@ class IndexingStatus:
                 skipped=self.skipped,
                 current_file=self.current_file,
                 errors=list(self.errors),
+                warnings=list(self.warnings),
             )
 
 
@@ -326,6 +329,40 @@ def run_indexing(directory: str) -> None:
                 raise
 
         # ── Phase 6: 批量 Embedding + ChromaDB 写入 ──
+        # 去重：内容相同的文件（相同 MD5）会产生相同 chunk_id，ChromaDB 单批次要求 ID 唯一
+        if all_chunks:
+            seen_ids: set[str] = set()
+            unique_chunks: list[dict] = []
+            dup_count = 0
+            for chunk in all_chunks:
+                cid = chunk["chunk_id"]
+                if cid not in seen_ids:
+                    seen_ids.add(cid)
+                    unique_chunks.append(chunk)
+                else:
+                    dup_count += 1
+            if dup_count > 0:
+                # 按 file_hash 分组，找出内容重复的文件
+                from collections import defaultdict
+                hash_to_files: dict[str, list[str]] = defaultdict(list)
+                for r in successful_results:
+                    # 用相对路径，区分不同子目录下的同名文件
+                    try:
+                        rel = str(Path(r["file_path"]).relative_to(root))
+                    except ValueError:
+                        rel = r["file_name"]
+                    hash_to_files[r["file_hash"]].append(rel)
+                dup_groups = {h: names for h, names in hash_to_files.items() if len(names) > 1}
+                lines = [f"发现 {len(dup_groups)} 组内容相同的文件（共 {dup_count} 个重复分块），已自动去重："]
+                for idx, names in enumerate(dup_groups.values(), 1):
+                    lines.append(f"  [{idx}] 共 {len(names)} 个文件：")
+                    for name in names:
+                        lines.append(f"    · {name}")
+                msg = "\n".join(lines)
+                logger.warning(msg)
+                indexing_status.warnings.append(msg)
+            all_chunks = unique_chunks
+
         if all_chunks:
             indexing_status.phase = "embedding"
             all_texts = [c["text"] for c in all_chunks]

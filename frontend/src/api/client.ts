@@ -65,6 +65,7 @@ export interface IndexStatus {
   skipped: number
   current_file: string
   errors: string[]
+  warnings: string[]
 }
 
 export interface ArchiveStatus {

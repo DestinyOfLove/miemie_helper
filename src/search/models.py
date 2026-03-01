@@ -79,6 +79,7 @@ class IndexStatusResponse(BaseModel):
     skipped: int = 0
     current_file: str = ""
     errors: list[str] = []
+    warnings: list[str] = []
 
 
 class DirectoryInfo(BaseModel):
