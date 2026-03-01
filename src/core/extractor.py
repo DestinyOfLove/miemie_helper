@@ -15,6 +15,7 @@ import cv2
 import numpy as np
 import pymupdf
 from docx import Document
+from filelock import FileLock
 from PIL import Image
 from rapidocr_onnxruntime import RapidOCR
 
@@ -130,6 +131,12 @@ def extract_from_docx(file_path: Path) -> str:
 
 _soffice_path: str | None = None
 
+# 跨进程文件锁：LibreOffice 不支持并发调用，多个 soffice 实例会争用同一个
+# user profile 导致转换失败或崩溃（SIGABRT）。用文件锁串行化所有调用。
+_soffice_lock = FileLock(
+    Path(tempfile.gettempdir()) / "miemie_soffice.lock", timeout=120,
+)
+
 
 def find_soffice() -> str | None:
     """查找 LibreOffice soffice 可执行文件路径。找不到返回 None。
@@ -179,14 +186,18 @@ def find_soffice() -> str | None:
 
 
 def extract_via_libreoffice(file_path: Path) -> str:
-    """通过 LibreOffice 将 .doc/.wps 转为 .docx，再用 python-docx 提取文本。"""
+    """通过 LibreOffice 将 .doc/.wps 转为 .docx，再用 python-docx 提取文本。
+
+    使用跨进程文件锁保证同一时刻只有一个 soffice 进程运行，
+    避免多实例争用 user profile 导致转换失败或崩溃。
+    """
     soffice = find_soffice()
     if not soffice:
         raise FileNotFoundError(
             "未找到 LibreOffice。请安装 LibreOffice: https://www.libreoffice.org/"
         )
 
-    with tempfile.TemporaryDirectory() as tmpdir:
+    with _soffice_lock, tempfile.TemporaryDirectory() as tmpdir:
         cmd = [
             soffice,
             "--headless",
@@ -196,7 +207,7 @@ def extract_via_libreoffice(file_path: Path) -> str:
             str(file_path),
         ]
         result = subprocess.run(
-            cmd, capture_output=True, text=True, timeout=60,
+            cmd, capture_output=True, text=True, timeout=120,
         )
         if result.returncode != 0:
             raise RuntimeError(
