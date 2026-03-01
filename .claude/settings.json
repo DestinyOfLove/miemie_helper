@@ -7,6 +7,7 @@
     "data-validation-suite@claude-code-workflows": true,
     "backend-development@claude-code-workflows": true,
     "business-analytics@claude-code-workflows": true,
-    "agent-teams@claude-code-workflows": true
+    "agent-teams@claude-code-workflows": true,
+    "ui-ux-pro-max@ui-ux-pro-max-skill": true
   }
 }

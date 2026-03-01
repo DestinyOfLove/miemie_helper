@@ -123,7 +123,7 @@ function CopyableCell({ text, children }: { text: string; children: React.ReactN
         style={{
           position: 'absolute',
           right: 4,
-          bottom: 4,
+          top: 4,
           padding: '2px 8px',
           fontSize: 12,
           background: copied ? '#4CAF50' : '#fff',
@@ -186,7 +186,7 @@ function ContentCell({ value }: { value: string }) {
 function TextCell({ value }: { value: string }) {
   return (
     <CopyableCell text={value || ''}>
-      <div style={{ padding: '8px 0' }}>{value}</div>
+      <div style={{ padding: '8px 0', whiteSpace: 'normal', wordBreak: 'break-all' }}>{value}</div>
     </CopyableCell>
   )
 }
@@ -213,8 +213,10 @@ const colDefs: ColDef<RowData>[] = [
     sortable: true,
     filter: 'agTextColumnFilter',
     floatingFilter: true,
+    autoHeight: true,
+    wrapText: true,
     cellRenderer: TextCell,
-    cellStyle: { fontSize: '0.82em', color: '#666', wordBreak: 'break-all' },
+    cellStyle: { fontSize: '0.82em', color: '#666' },
   },
   {
     field: 'file_name',
@@ -225,6 +227,8 @@ const colDefs: ColDef<RowData>[] = [
     sortable: true,
     filter: 'agTextColumnFilter',
     floatingFilter: true,
+    autoHeight: true,
+    wrapText: true,
     cellRenderer: TextCell,
     cellStyle: { fontWeight: 500 },
   },
