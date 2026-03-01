@@ -82,9 +82,14 @@ def search_page():
             progress.visible = True
             index_btn.disable()
 
-            # 轮询状态
-            while indexing_status.is_running:
+            # 等待后台线程开始
+            await asyncio.sleep(0.2)
+
+            # 轮询直到完成（不依赖 is_running 的精确时序）
+            while True:
                 status = indexing_status.to_response()
+                if status.phase in ("complete", "error") or not status.is_running:
+                    break
                 total = status.total_files or 1
                 done = status.processed_files + status.skipped
                 progress.set_value(done / total)
@@ -95,7 +100,7 @@ def search_page():
                 )
                 await asyncio.sleep(0.5)
 
-            # 完成
+            # 读取最终状态
             final = indexing_status.to_response()
             progress.set_value(1.0)
             status_label.text = (
@@ -110,6 +115,7 @@ def search_page():
         async def refresh_dir_table():
             dirs = document_db.get_all_directories()
             dir_table.rows = [d.model_dump() for d in dirs]
+            dir_table.update()
 
         async def on_search():
             query = query_input.value.strip()

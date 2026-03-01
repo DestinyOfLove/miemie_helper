@@ -160,8 +160,9 @@ def run_indexing(directory: str) -> None:
         document_db.update_directory_status(directory_str, status="error")
 
     finally:
-        indexing_status.is_running = False
         indexing_status.current_file = ""
+        # is_running 必须在 phase 设置之后才清除，避免 UI 轮询竞态
+        indexing_status.is_running = False
 
 
 def _index_file(file_path: Path, root: Path, directory_str: str) -> None:
