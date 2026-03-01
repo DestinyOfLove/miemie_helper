@@ -9,6 +9,7 @@ from src.search.indexer import (
     indexing_status,
     scan_directory_changes,
     start_indexing_background,
+    start_rebuild_background,
 )
 from src.search.models import (
     DirectoryInfo,
@@ -88,3 +89,17 @@ async def remove_directory_index(directory: str) -> dict:
     document_db.delete_directory(directory)
 
     return {"message": f"已删除 {count} 条记录", "directory": directory}
+
+
+@router.post("/directory/rebuild")
+async def rebuild_directory_index(request: IndexRequest) -> dict:
+    """删除某目录全部索引后重新全量索引。"""
+    directory = Path(request.directory).resolve()
+    if not directory.is_dir():
+        raise HTTPException(status_code=400, detail=f"目录不存在: {directory}")
+
+    started = start_rebuild_background(str(directory))
+    if not started:
+        raise HTTPException(status_code=409, detail="索引任务正在运行中")
+
+    return {"message": "重建索引已启动", "directory": str(directory)}

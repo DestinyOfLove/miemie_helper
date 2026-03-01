@@ -351,6 +351,33 @@ export function SearchPage() {
     } catch (e: unknown) { alert(String(e)) }
   }
 
+  const deleteDirectory = async (dir: string) => {
+    if (!confirm(`确定删除「${dir}」的全部索引数据？此操作不可撤销。`)) return
+    try {
+      await api.deleteDirectory(dir)
+      await loadDirectories()
+      // 同步清理 selectedDirs
+      setSelectedDirs(prev => prev.filter(d => d !== dir))
+    } catch (e: unknown) { alert(String(e)) }
+  }
+
+  const rebuildDirectory = async (dir: string) => {
+    if (!confirm(`确定重建「${dir}」的索引？将删除旧索引并重新提取全部文件。`)) return
+    try {
+      await api.rebuildDirectory(dir)
+      setIndexing(true)
+      pollRef.current = setInterval(async () => {
+        const s = await api.indexStatus()
+        setIndexStatus(s)
+        if (!s.is_running && ['complete', 'error', 'idle'].includes(s.phase)) {
+          clearInterval(pollRef.current!)
+          setIndexing(false)
+          await loadDirectories()
+        }
+      }, 600)
+    } catch (e: unknown) { alert(String(e)) }
+  }
+
   // ── 搜索 ─────────────────────────────────────────────────────
   const doSearch = async () => {
     // 把当前输入框内容也纳入 tags（若有）
@@ -467,7 +494,7 @@ export function SearchPage() {
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
                   <thead>
                     <tr style={{ background: '#f5f5f5' }}>
-                      {['目录', '文件数', '已索引', '状态', '变更检测', '最后扫描'].map(h => (
+                      {['目录', '文件数', '已索引', '状态', '变更检测', '最后扫描', '操作'].map(h => (
                         <th key={h} style={{ padding: '6px 10px', textAlign: 'left', borderBottom: '1px solid #e0e0e0', fontWeight: 500 }}>{h}</th>
                       ))}
                     </tr>
@@ -500,6 +527,34 @@ export function SearchPage() {
                           <td style={{ padding: '6px 10px' }}>{d.status}</td>
                           <td style={{ padding: '6px 10px' }}>{changeCell}</td>
                           <td style={{ padding: '6px 10px' }}>{d.last_scan_at}</td>
+                          <td style={{ padding: '6px 10px', whiteSpace: 'nowrap' }}>
+                            <button
+                              onClick={() => rebuildDirectory(d.directory_path)}
+                              disabled={indexing}
+                              title="删除旧索引并重新全量索引"
+                              style={{
+                                padding: '2px 10px', fontSize: 12, marginRight: 6,
+                                background: '#FF9800', color: '#fff', border: 'none',
+                                borderRadius: 4, cursor: indexing ? 'not-allowed' : 'pointer',
+                                opacity: indexing ? 0.5 : 1,
+                              }}
+                            >
+                              重建
+                            </button>
+                            <button
+                              onClick={() => deleteDirectory(d.directory_path)}
+                              disabled={indexing}
+                              title="删除该目录的全部索引数据"
+                              style={{
+                                padding: '2px 10px', fontSize: 12,
+                                background: '#D32F2F', color: '#fff', border: 'none',
+                                borderRadius: 4, cursor: indexing ? 'not-allowed' : 'pointer',
+                                opacity: indexing ? 0.5 : 1,
+                              }}
+                            >
+                              删除
+                            </button>
+                          </td>
                         </tr>
                       )
                     })}

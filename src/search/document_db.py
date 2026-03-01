@@ -58,19 +58,11 @@ def _init_schema(conn: sqlite3.Connection) -> None:
             last_scan_at TEXT NOT NULL DEFAULT (datetime('now')),
             file_count INTEGER NOT NULL DEFAULT 0,
             indexed_count INTEGER NOT NULL DEFAULT 0,
-            status TEXT NOT NULL DEFAULT 'idle'
+            status TEXT NOT NULL DEFAULT 'idle',
+            starred INTEGER NOT NULL DEFAULT 0
         );
     """)
     conn.commit()
-
-    # 迁移：为已有数据库添加 starred 列
-    try:
-        conn.execute(
-            "ALTER TABLE indexed_directories ADD COLUMN starred INTEGER NOT NULL DEFAULT 0"
-        )
-        conn.commit()
-    except sqlite3.OperationalError:
-        pass  # 列已存在
 
 
 # ── 文档 CRUD ──

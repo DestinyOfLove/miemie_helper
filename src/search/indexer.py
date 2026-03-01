@@ -386,10 +386,35 @@ def scan_directory_changes(directory: str) -> DirectoryScanResult:
     )
 
 
+def rebuild_directory(directory: str) -> None:
+    """删除目录全部索引后重新全量索引（同步，供后台线程调用）。"""
+    root = Path(directory).resolve()
+    directory_str = str(root)
+
+    # 先清除该目录的所有索引数据
+    docs = document_db.get_documents_by_directory(directory_str)
+    for doc in docs:
+        _delete_document(doc.id)
+    # 保留目录记录（含 starred 等元信息），重置计数
+    document_db.upsert_directory(directory_str, file_count=0, indexed_count=0, status="rebuilding")
+
+    # 复用 run_indexing 做全量索引
+    run_indexing(directory_str)
+
+
 def start_indexing_background(directory: str) -> bool:
     """在后台线程启动索引。返回是否成功启动。"""
     if indexing_status.is_running:
         return False
     thread = threading.Thread(target=run_indexing, args=(directory,), daemon=True)
+    thread.start()
+    return True
+
+
+def start_rebuild_background(directory: str) -> bool:
+    """在后台线程启动重建索引。返回是否成功启动。"""
+    if indexing_status.is_running:
+        return False
+    thread = threading.Thread(target=rebuild_directory, args=(directory,), daemon=True)
     thread.start()
     return True

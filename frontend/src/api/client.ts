@@ -126,6 +126,22 @@ export const api = {
     return res.json()
   },
 
+  deleteDirectory: async (directory: string): Promise<void> => {
+    const res = await fetch(`${BASE}/index/directory?directory=${encodeURIComponent(directory)}`, {
+      method: 'DELETE',
+    })
+    if (!res.ok) throw new Error(await res.text())
+  },
+
+  rebuildDirectory: async (directory: string): Promise<void> => {
+    const res = await fetch(`${BASE}/index/directory/rebuild`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ directory }),
+    })
+    if (!res.ok) throw new Error(await res.text())
+  },
+
   archiveStart: async (directory: string): Promise<void> => {
     const res = await fetch(`${BASE}/archive/start`, {
       method: 'POST',
