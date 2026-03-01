@@ -16,6 +16,7 @@ def scan_directory(root_dir: Path) -> list[Path]:
             and file_path.suffix.lower() in ALL_EXTENSIONS
             and not file_path.name.startswith((".", "~"))
             and "呈批表" not in file_path.stem
+            and "岗位设置表" not in file_path.stem
         )
     ]
     files.sort()
