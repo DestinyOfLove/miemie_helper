@@ -25,6 +25,9 @@ class DocumentRecord(BaseModel):
     indexed_at: str = ""
     vector_indexed: bool = False
     fts_indexed: bool = False
+    processing_status: str = "indexed"
+    error_message: str = ""
+    retry_count: int = 0
 
 
 class SearchRequest(BaseModel):

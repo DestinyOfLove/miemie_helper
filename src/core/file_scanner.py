@@ -8,14 +8,16 @@ from src.config import ALL_EXTENSIONS
 
 def scan_directory(root_dir: Path) -> list[Path]:
     """递归扫描目录，返回所有支持格式的文件路径（排序后）。"""
-    files = []
-    for file_path in sorted(root_dir.rglob("*")):
+    files = [
+        file_path
+        for file_path in root_dir.rglob("*")
         if (
             file_path.is_file()
             and file_path.suffix.lower() in ALL_EXTENSIONS
             and not file_path.name.startswith((".", "~"))
-        ):
-            files.append(file_path)
+        )
+    ]
+    files.sort()
     return files
 
 

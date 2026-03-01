@@ -22,6 +22,7 @@ from src.config import (
     DOC_EXTENSIONS,
     DOCX_EXTENSIONS,
     IMAGE_EXTENSIONS,
+    OCR_DPI,
     OFD_EXTENSIONS,
     PDF_EXTENSIONS,
     WPS_EXTENSIONS,
@@ -86,7 +87,7 @@ def extract_from_pdf(file_path: Path) -> str:
             all_text.append(text)
         else:
             # 文本太少，可能是扫描件，转图片做 OCR
-            pix = page.get_pixmap(dpi=300)
+            pix = page.get_pixmap(dpi=OCR_DPI)
             img_array = np.frombuffer(pix.samples, dtype=np.uint8).reshape(
                 pix.h, pix.w, pix.n
             )
@@ -96,6 +97,9 @@ def extract_from_pdf(file_path: Path) -> str:
             ocr_text = ocr_image(preprocessed)
             if ocr_text:
                 all_text.append(ocr_text)
+            # 显式释放大型图像数据，减少内存峰值
+            del img_array, preprocessed
+            pix = None
 
     doc.close()
     return "\n".join(all_text)
@@ -108,7 +112,12 @@ def extract_from_docx(file_path: Path) -> str:
     # 也提取表格中的文本
     for table in doc.tables:
         for row in table.rows:
+            seen: set[int] = set()
             for cell in row.cells:
+                cid = id(cell)
+                if cid in seen:
+                    continue
+                seen.add(cid)
                 cell_text = cell.text.strip()
                 if cell_text:
                     paragraphs.append(cell_text)

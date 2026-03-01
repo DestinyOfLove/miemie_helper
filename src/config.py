@@ -47,6 +47,20 @@ EXCEL_CELL_MAX = 32000
 # Web 服务端口
 WEB_PORT = 4001
 
+# ── 性能相关配置 ──
+
+# OCR 渲染 DPI（降低可提升速度，200 对标准公文足够）
+OCR_DPI = int(os.environ.get("MIEMIE_OCR_DPI", "200"))
+
+# 索引并行 worker 数（0 = 自动: max(1, cpu_count - 2)）
+INDEXING_WORKERS = int(os.environ.get("MIEMIE_INDEXING_WORKERS", "0"))
+
+# SQLite 批量提交大小
+BATCH_COMMIT_SIZE = 50
+
+# 向量检索返回的最大结果数
+VECTOR_SEARCH_TOP_K = 100
+
 
 def ensure_dirs() -> None:
     """确保运行时目录存在。"""
