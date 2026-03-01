@@ -57,7 +57,7 @@ def _init_schema(conn: sqlite3.Connection) -> None:
 
         CREATE TABLE IF NOT EXISTS indexed_directories (
             directory_path TEXT PRIMARY KEY,
-            last_scan_at TEXT NOT NULL DEFAULT (datetime('now')),
+            last_scan_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
             file_count INTEGER NOT NULL DEFAULT 0,
             indexed_count INTEGER NOT NULL DEFAULT 0,
             status TEXT NOT NULL DEFAULT 'idle',
@@ -280,9 +280,9 @@ def upsert_directory(directory_path: str, file_count: int = 0,
     conn.execute(
         """INSERT INTO indexed_directories
            (directory_path, last_scan_at, file_count, indexed_count, status)
-           VALUES (?, datetime('now'), ?, ?, ?)
+           VALUES (?, datetime('now', 'localtime'), ?, ?, ?)
            ON CONFLICT(directory_path) DO UPDATE SET
-               last_scan_at = datetime('now'),
+               last_scan_at = datetime('now', 'localtime'),
                file_count = excluded.file_count,
                indexed_count = excluded.indexed_count,
                status = excluded.status""",
@@ -298,13 +298,13 @@ def update_directory_status(directory_path: str, status: str,
     if indexed_count is not None:
         conn.execute(
             "UPDATE indexed_directories SET status = ?, indexed_count = ?, "
-            "last_scan_at = datetime('now') WHERE directory_path = ?",
+            "last_scan_at = datetime('now', 'localtime') WHERE directory_path = ?",
             (status, indexed_count, directory_path),
         )
     else:
         conn.execute(
             "UPDATE indexed_directories SET status = ?, "
-            "last_scan_at = datetime('now') WHERE directory_path = ?",
+            "last_scan_at = datetime('now', 'localtime') WHERE directory_path = ?",
             (status, directory_path),
         )
     conn.commit()
