@@ -78,28 +78,51 @@ def delete_fts_by_directory(doc_ids: list[str]) -> None:
     conn.commit()
 
 
-def search_fulltext(query: str, limit: int = 20) -> list[dict]:
-    """全文检索。返回 [{doc_id, rank, snippet}, ...]。"""
+# FTS5 列名与搜索范围的映射
+# 表结构：doc_id(UNINDEXED), file_name, title, doc_number, issuing_authority, content_segmented
+_SCOPE_COLS = {
+    "content": ["content_segmented"],
+    "title":   ["title", "file_name"],
+    "all":     ["file_name", "title", "doc_number", "issuing_authority", "content_segmented"],
+}
+
+
+def search_fulltext(query: str, scopes: list[str] | None = None) -> list[dict]:
+    """全文检索。返回 [{doc_id, rank, snippet}, ...]，不限数量。
+
+    scopes: ["content"] | ["title"] | ["all"] 或任意组合，控制搜索范围。
+    """
     _ensure_fts_table()
     segmented_query = segment_text(query)
     if not segmented_query.strip():
         return []
 
+    # 汇总所有要搜索的列（去重）
+    if scopes:
+        cols: list[str] = []
+        for s in scopes:
+            cols.extend(_SCOPE_COLS.get(s, _SCOPE_COLS["content"]))
+        cols = list(dict.fromkeys(cols))  # 保序去重
+    else:
+        cols = _SCOPE_COLS["content"]
+
+    # FTS5 列限定语法：{col1 col2}: query
+    col_expr = "{" + " ".join(cols) + "}"
+    fts_query = f"{col_expr}: {segmented_query}"
+
     conn = get_connection()
     try:
         cursor = conn.execute(
             """SELECT doc_id, rank,
-                      snippet(documents_fts, 5, '<mark>', '</mark>', '...', 40) as snippet
+                      snippet(documents_fts, 5, '<mark>', '</mark>', '...', 64) as snippet
                FROM documents_fts
                WHERE documents_fts MATCH ?
-               ORDER BY rank
-               LIMIT ?""",
-            (segmented_query, limit),
+               ORDER BY rank""",
+            (fts_query,),
         )
         return [
             {"doc_id": row[0], "rank": row[1], "snippet": row[2]}
             for row in cursor
         ]
     except sqlite3.OperationalError:
-        # MATCH 语法错误时返回空
         return []

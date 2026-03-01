@@ -12,8 +12,8 @@ router = APIRouter(prefix="/api/search", tags=["search"])
 @router.post("/", response_model=DualSearchResponse)
 async def dual_search(request: SearchRequest) -> DualSearchResponse:
     """同时执行全文检索和向量检索，返回双栏结果。"""
-    fulltext_results = _fulltext_search(request.query, request.max_results)
-    vector_results = _vector_search(request.query, request.max_results)
+    fulltext_results = _fulltext_search(request.query, request.scopes)
+    vector_results = _vector_search(request.query)
     return DualSearchResponse(
         fulltext_results=fulltext_results,
         vector_results=vector_results,
@@ -23,18 +23,18 @@ async def dual_search(request: SearchRequest) -> DualSearchResponse:
 @router.post("/fulltext", response_model=list[SearchResult])
 async def fulltext_search(request: SearchRequest) -> list[SearchResult]:
     """仅全文检索。"""
-    return _fulltext_search(request.query, request.max_results)
+    return _fulltext_search(request.query, request.scopes)
 
 
 @router.post("/vector", response_model=list[SearchResult])
 async def vector_search_endpoint(request: SearchRequest) -> list[SearchResult]:
     """仅向量检索。"""
-    return _vector_search(request.query, request.max_results)
+    return _vector_search(request.query)
 
 
-def _fulltext_search(query: str, max_results: int) -> list[SearchResult]:
+def _fulltext_search(query: str, scopes: list[str] | None = None) -> list[SearchResult]:
     """执行全文检索并丰富元数据。"""
-    fts_results = fulltext_store.search_fulltext(query, limit=max_results)
+    fts_results = fulltext_store.search_fulltext(query, scopes)
     if not fts_results:
         return []
 
@@ -58,15 +58,16 @@ def _fulltext_search(query: str, max_results: int) -> list[SearchResult]:
             source_year=doc.source_year,
             score=abs(r["rank"]),
             snippet=r["snippet"],
+            extracted_text=doc.extracted_text,
             match_type="fulltext",
         ))
     return results
 
 
-def _vector_search(query: str, max_results: int) -> list[SearchResult]:
+def _vector_search(query: str) -> list[SearchResult]:
     """执行向量检索并丰富元数据。"""
     query_embedding = encode_query(query)
-    chroma_results = vector_store.search_similar(query_embedding, n_results=max_results * 2)
+    chroma_results = vector_store.search_similar(query_embedding)
 
     if not chroma_results["ids"] or not chroma_results["ids"][0]:
         return []
@@ -85,7 +86,7 @@ def _vector_search(query: str, max_results: int) -> list[SearchResult]:
                 "snippet": snippet[:200],
             }
 
-    doc_ids = list(seen_docs.keys())[:max_results]
+    doc_ids = list(seen_docs.keys())
     docs = document_db.get_documents_by_ids(doc_ids)
 
     results = []
@@ -106,6 +107,7 @@ def _vector_search(query: str, max_results: int) -> list[SearchResult]:
             source_year=doc.source_year,
             score=1.0 - info["distance"],  # cosine distance → similarity
             snippet=info["snippet"],
+            extracted_text=doc.extracted_text,
             match_type="vector",
         ))
     return results

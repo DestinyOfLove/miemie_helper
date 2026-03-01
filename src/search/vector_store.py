@@ -98,14 +98,13 @@ def delete_document_chunks(doc_id: str) -> None:
         collection.delete(ids=results["ids"])
 
 
-def search_similar(query_embedding: np.ndarray, n_results: int = 20) -> dict:
-    """向量相似度检索。返回 ChromaDB 查询结果。"""
+def search_similar(query_embedding: np.ndarray) -> dict:
+    """向量相似度检索。返回所有匹配的 ChromaDB 查询结果。"""
     collection = get_collection()
     count = collection.count()
     if count == 0:
         return {"ids": [[]], "documents": [[]], "metadatas": [[]], "distances": [[]]}
-    # 限制 n_results 不超过集合中的文档数
-    actual_n = min(n_results, count)
+    actual_n = count
     return collection.query(
         query_embeddings=[query_embedding.tolist()],
         n_results=actual_n,

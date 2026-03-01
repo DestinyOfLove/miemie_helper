@@ -36,3 +36,8 @@ Thumbs.db
 # Output
 output/
 *.xlsx
+
+data
+frontend/node_modules/
+frontend/dist/
+static/

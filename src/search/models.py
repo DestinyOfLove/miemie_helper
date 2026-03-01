@@ -30,7 +30,8 @@ class DocumentRecord(BaseModel):
 class SearchRequest(BaseModel):
     """搜索请求。"""
     query: str
-    max_results: int = 20
+    max_results: int = 0  # 0 表示不限制，返回所有匹配
+    scopes: list[str] = ["content"]  # 搜索范围：content / title / all
 
 
 class SearchResult(BaseModel):
@@ -46,6 +47,7 @@ class SearchResult(BaseModel):
     source_year: str = ""
     score: float = 0.0
     snippet: str = ""
+    extracted_text: str = ""        # 原始全文，用于前端高亮展示
     match_type: str = ""            # "vector" 或 "fulltext"
 
 

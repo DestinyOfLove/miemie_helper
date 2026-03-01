@@ -1,17 +1,40 @@
-"""文档搜索页：索引管理 + 双栏搜索结果。"""
+"""文档搜索页：索引管理 + AG Grid 搜索结果。"""
 
 import asyncio
+import os
 
 from nicegui import ui
 
 from src.search import document_db
 from src.search.indexer import indexing_status, start_indexing_background
-from src.search.models import SearchResult
 from src.ui.layout import create_header
+
+_MATCH_BADGE = {
+    "精确匹配": (
+        '<span style="background:#1565C0;color:#fff;padding:2px 10px;'
+        'border-radius:4px;font-size:0.8em;white-space:nowrap">精确匹配</span>'
+    ),
+    "语义匹配": (
+        '<span style="background:#E65100;color:#fff;padding:2px 10px;'
+        'border-radius:4px;font-size:0.8em;white-space:nowrap">语义匹配</span>'
+    ),
+    "精确+语义": (
+        '<span style="background:#6A1B9A;color:#fff;padding:2px 10px;'
+        'border-radius:4px;font-size:0.8em;white-space:nowrap">精确+语义</span>'
+    ),
+}
 
 
 @ui.page("/search", title="文档搜索 - MieMie Helper")
 def search_page():
+    # mark 高亮样式
+    ui.add_head_html("""
+        <style>
+            mark { background: #FFF176; padding: 1px 2px; border-radius: 2px; }
+            .ag-cell { align-items: flex-start !important; }
+        </style>
+    """)
+
     create_header()
 
     with ui.column().classes("w-full max-w-7xl mx-auto p-4"):
@@ -34,36 +57,71 @@ def search_page():
             ui.label("已索引目录").classes("text-subtitle2")
             dir_table = ui.table(
                 columns=[
-                    {"name": "path", "label": "目录", "field": "directory_path", "align": "left"},
-                    {"name": "files", "label": "文件数", "field": "file_count"},
-                    {"name": "indexed", "label": "已索引", "field": "indexed_count"},
-                    {"name": "status", "label": "状态", "field": "status"},
+                    {"name": "path",      "label": "目录",     "field": "directory_path", "align": "left"},
+                    {"name": "files",     "label": "文件数",   "field": "file_count"},
+                    {"name": "indexed",   "label": "已索引",   "field": "indexed_count"},
+                    {"name": "status",    "label": "状态",     "field": "status"},
                     {"name": "last_scan", "label": "最后扫描", "field": "last_scan_at"},
                 ],
                 rows=[],
             ).classes("w-full")
 
         # ── 搜索区域 ──
-        with ui.row().classes("w-full items-end gap-4 q-mb-md"):
+        with ui.row().classes("w-full items-end gap-4 q-mb-sm"):
             query_input = ui.input(
                 label="搜索内容",
                 placeholder="输入关键词或描述你要找的内容...",
             ).classes("flex-1")
             search_btn = ui.button("搜索", icon="search", color="primary")
 
-        # ── 双栏结果 ──
-        with ui.row().classes("w-full gap-4"):
-            with ui.column().classes("flex-1"):
-                ui.label("全文检索结果").classes("text-h6")
-                ui.label("精确关键词匹配").classes("text-caption text-grey q-mb-sm")
-                fts_container = ui.column().classes("w-full")
+        results_count = ui.label("").classes("text-caption text-grey q-mb-xs")
 
-            ui.separator().props("vertical")
-
-            with ui.column().classes("flex-1"):
-                ui.label("语义检索结果").classes("text-h6")
-                ui.label("含义相似度匹配").classes("text-caption text-grey q-mb-sm")
-                vec_container = ui.column().classes("w-full")
+        # ── AG Grid 搜索结果 ──
+        results_grid = ui.aggrid({
+            "columnDefs": [
+                {
+                    "field": "folder",
+                    "headerName": "文件夹",
+                    "flex": 1,
+                    "minWidth": 140,
+                    "sortable": True,
+                    "filter": "agTextColumnFilter",
+                    "floatingFilter": True,
+                    "wrapText": True,
+                    "autoHeight": True,
+                },
+                {
+                    "field": "file_name",
+                    "headerName": "文件名",
+                    "flex": 1,
+                    "minWidth": 160,
+                    "sortable": True,
+                    "filter": "agTextColumnFilter",
+                    "floatingFilter": True,
+                    "wrapText": True,
+                    "autoHeight": True,
+                },
+                {
+                    "field": "content",
+                    "headerName": "内容",
+                    "flex": 3,
+                    "minWidth": 320,
+                    "autoHeight": True,
+                    "wrapText": True,
+                },
+                {
+                    "field": "match_type",
+                    "headerName": "匹配方式",
+                    "width": 130,
+                    "sortable": True,
+                    "filter": "agTextColumnFilter",
+                },
+            ],
+            "rowData": [],
+            "domLayout": "autoHeight",
+            "defaultColDef": {"resizable": True},
+            "theme": "quartz",
+        }, html_columns=[2, 3]).classes("w-full")
 
         # ── 事件处理 ──
 
@@ -82,10 +140,8 @@ def search_page():
             progress.visible = True
             index_btn.disable()
 
-            # 等待后台线程开始
             await asyncio.sleep(0.2)
 
-            # 轮询直到完成（不依赖 is_running 的精确时序）
             while True:
                 status = indexing_status.to_response()
                 if status.phase in ("complete", "error") or not status.is_running:
@@ -100,7 +156,6 @@ def search_page():
                 )
                 await asyncio.sleep(0.5)
 
-            # 读取最终状态
             final = indexing_status.to_response()
             progress.set_value(1.0)
             status_label.text = (
@@ -124,27 +179,52 @@ def search_page():
                 return
 
             search_btn.disable()
-            fts_container.clear()
-            vec_container.clear()
+            results_grid.options["rowData"] = []
+            results_grid.update()
+            results_count.text = "搜索中..."
 
             try:
-                # 动态导入避免循环依赖
                 from src.api.search_routes import _fulltext_search, _vector_search
 
-                fts_results = _fulltext_search(query, 20)
-                vec_results = _vector_search(query, 20)
+                fts_results = _fulltext_search(query)
+                vec_results = _vector_search(query)
 
-                _render_results(fts_container, fts_results, "全文")
-                _render_results(vec_container, vec_results, "语义")
+                # 合并结果，按 doc_id 去重
+                merged: dict[str, dict] = {}
 
-                if not fts_results and not vec_results:
-                    with fts_container:
-                        ui.label("无匹配结果").classes("text-grey q-pa-md")
-                    with vec_container:
-                        ui.label("无匹配结果").classes("text-grey q-pa-md")
+                for r in fts_results:
+                    merged[r.doc_id] = {
+                        "folder": os.path.dirname(r.file_path),
+                        "file_name": r.file_name,
+                        "content": r.snippet or "",
+                        "match_type": _MATCH_BADGE["精确匹配"],
+                        "_match_key": "精确匹配",
+                    }
+
+                for r in vec_results:
+                    if r.doc_id in merged:
+                        merged[r.doc_id]["match_type"] = _MATCH_BADGE["精确+语义"]
+                        merged[r.doc_id]["_match_key"] = "精确+语义"
+                    else:
+                        merged[r.doc_id] = {
+                            "folder": os.path.dirname(r.file_path),
+                            "file_name": r.file_name,
+                            "content": r.snippet or "",
+                            "match_type": _MATCH_BADGE["语义匹配"],
+                            "_match_key": "语义匹配",
+                        }
+
+                rows = list(merged.values())
+                results_grid.options["rowData"] = rows
+                results_grid.update()
+                results_count.text = f"共 {len(rows)} 条结果"
+
+                if not rows:
+                    ui.notify("无匹配结果", type="warning")
 
             except Exception as e:
                 ui.notify(f"搜索出错: {e}", type="negative")
+                results_count.text = ""
             finally:
                 search_btn.enable()
 
@@ -152,40 +232,4 @@ def search_page():
         search_btn.on_click(on_search)
         query_input.on("keydown.enter", on_search)
 
-        # 页面加载时刷新目录表
         ui.timer(0.1, refresh_dir_table, once=True)
-
-
-def _render_results(container, results: list[SearchResult], label: str) -> None:
-    """渲染搜索结果列表。"""
-    with container:
-        if not results:
-            ui.label(f"无{label}匹配结果").classes("text-grey q-pa-md")
-            return
-
-        for i, r in enumerate(results):
-            with ui.card().classes("w-full q-mb-sm"):
-                with ui.card_section().classes("q-pb-none"):
-                    # 标题行
-                    title_text = r.title or r.file_name
-                    ui.label(title_text).classes("text-subtitle1 text-weight-medium")
-
-                    # 标签
-                    with ui.row().classes("gap-1 q-mt-xs"):
-                        if r.doc_number:
-                            ui.badge(r.doc_number, color="blue-2", text_color="blue-9").classes("text-caption")
-                        if r.source_year:
-                            ui.badge(r.source_year, color="green-2", text_color="green-9").classes("text-caption")
-                        if r.doc_type:
-                            ui.badge(r.doc_type, color="orange-2", text_color="orange-9").classes("text-caption")
-                        if r.score > 0:
-                            score_text = f"{r.score:.2f}"
-                            ui.badge(score_text, color="grey-3", text_color="grey-8").classes("text-caption")
-
-                with ui.card_section().classes("q-pt-sm"):
-                    # snippet
-                    if r.snippet:
-                        ui.html(r.snippet).classes("text-body2 text-grey-8")
-
-                    # 文件路径
-                    ui.label(r.file_path).classes("text-caption text-grey q-mt-xs")
