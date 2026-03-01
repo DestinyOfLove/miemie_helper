@@ -1,6 +1,14 @@
 """从不同格式的文件中提取文本内容。"""
 
 import hashlib
+import logging
+import os
+import platform
+import shutil
+import subprocess
+import tempfile
+import xml.etree.ElementTree as ET
+import zipfile
 from pathlib import Path
 
 import cv2
@@ -14,8 +22,12 @@ from src.config import (
     DOC_EXTENSIONS,
     DOCX_EXTENSIONS,
     IMAGE_EXTENSIONS,
+    OFD_EXTENSIONS,
     PDF_EXTENSIONS,
+    WPS_EXTENSIONS,
 )
+
+logger = logging.getLogger(__name__)
 
 _ocr_engine: RapidOCR | None = None
 
@@ -103,6 +115,128 @@ def extract_from_docx(file_path: Path) -> str:
     return "\n".join(paragraphs)
 
 
+# ---------------------------------------------------------------------------
+# LibreOffice 转换（.doc / .wps → .docx → python-docx 提取）
+# ---------------------------------------------------------------------------
+
+_soffice_path: str | None = None
+
+
+def find_soffice() -> str | None:
+    """查找 LibreOffice soffice 可执行文件路径。找不到返回 None。
+
+    查找优先级：
+    1. 环境变量 LIBREOFFICE_PATH（用户显式指定）
+    2. 系统 PATH（shutil.which）
+    3. 平台默认安装路径
+    """
+    global _soffice_path
+    if _soffice_path is not None:
+        return _soffice_path if _soffice_path else None
+
+    candidates: list[str] = []
+
+    # 1. 环境变量优先
+    env_path = os.environ.get("LIBREOFFICE_PATH")
+    if env_path:
+        candidates.append(env_path)
+
+    # 2. 系统 PATH
+    path_found = shutil.which("soffice")
+    if path_found:
+        candidates.append(path_found)
+
+    # 3. 平台默认路径
+    system = platform.system()
+    if system == "Darwin":
+        candidates.append(
+            "/Applications/LibreOffice.app/Contents/MacOS/soffice"
+        )
+    elif system == "Windows":
+        for pf_env in ("PROGRAMFILES", "PROGRAMFILES(X86)"):
+            pf_dir = os.environ.get(pf_env)
+            if pf_dir:
+                candidates.append(
+                    str(Path(pf_dir) / "LibreOffice" / "program" / "soffice.exe")
+                )
+
+    for candidate in candidates:
+        if Path(candidate).is_file():
+            _soffice_path = candidate
+            return _soffice_path
+
+    _soffice_path = ""  # 标记已搜索过，但未找到
+    return None
+
+
+def extract_via_libreoffice(file_path: Path) -> str:
+    """通过 LibreOffice 将 .doc/.wps 转为 .docx，再用 python-docx 提取文本。"""
+    soffice = find_soffice()
+    if not soffice:
+        raise FileNotFoundError(
+            "未找到 LibreOffice。请安装 LibreOffice: https://www.libreoffice.org/"
+        )
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        cmd = [
+            soffice,
+            "--headless",
+            "--norestore",
+            "--convert-to", "docx",
+            "--outdir", tmpdir,
+            str(file_path),
+        ]
+        result = subprocess.run(
+            cmd, capture_output=True, text=True, timeout=60,
+        )
+        if result.returncode != 0:
+            raise RuntimeError(
+                f"LibreOffice 转换失败: {result.stderr.strip()}"
+            )
+
+        # 查找输出的 .docx 文件
+        converted = list(Path(tmpdir).glob("*.docx"))
+        if not converted:
+            raise FileNotFoundError(
+                f"LibreOffice 转换后未找到 .docx 文件 (目录: {tmpdir})"
+            )
+
+        return extract_from_docx(converted[0])
+
+
+# ---------------------------------------------------------------------------
+# OFD 提取（ZIP + XML 解析）
+# ---------------------------------------------------------------------------
+
+_OFD_NS = "http://www.ofdspec.org/2016"
+
+
+def extract_from_ofd(file_path: Path) -> str:
+    """从 OFD 文件提取文本。OFD 是 ZIP 包，文本在 Content.xml 的 TextCode 节点。"""
+    texts: list[str] = []
+    with zipfile.ZipFile(file_path, "r") as z:
+        # 找到所有 Content.xml（每页一个）
+        content_files = sorted(
+            n for n in z.namelist() if n.endswith("Content.xml")
+        )
+        for cf in content_files:
+            with z.open(cf) as f:
+                try:
+                    root = ET.parse(f).getroot()
+                except ET.ParseError:
+                    logger.warning("OFD 页面 XML 解析失败: %s / %s", file_path, cf)
+                    continue
+                for tc in root.iter(f"{{{_OFD_NS}}}TextCode"):
+                    if tc.text and tc.text.strip():
+                        texts.append(tc.text.strip())
+
+    # 如果 XML 解析没有文本（可能是字体混淆），尝试转 PDF 后 OCR
+    if not texts:
+        logger.info("OFD 未提取到文本，可能存在字体混淆: %s", file_path)
+
+    return "\n".join(texts)
+
+
 def compute_file_hash(file_path: Path) -> str:
     """计算文件 MD5 哈希值。"""
     md5 = hashlib.md5()
@@ -122,7 +256,19 @@ def extract_text(file_path: Path) -> tuple[str, str]:
         return extract_from_pdf(file_path), "PDF"
     elif suffix in DOCX_EXTENSIONS:
         return extract_from_docx(file_path), "Word(.docx)"
-    elif suffix in DOC_EXTENSIONS:
-        return "", "Word(.doc)需转换"
+    elif suffix in DOC_EXTENSIONS or suffix in WPS_EXTENSIONS:
+        fmt = "Word(.doc)" if suffix in DOC_EXTENSIONS else "WPS"
+        try:
+            text = extract_via_libreoffice(file_path)
+            return text, f"{fmt}→LibreOffice"
+        except FileNotFoundError as e:
+            logger.warning("LibreOffice 不可用: %s", e)
+            return "", f"{fmt}需安装LibreOffice"
+        except Exception as e:
+            logger.error("LibreOffice 转换失败 %s: %s", file_path.name, e)
+            return "", f"{fmt}转换失败"
+    elif suffix in OFD_EXTENSIONS:
+        text = extract_from_ofd(file_path)
+        return text, "OFD"
     else:
         return "", "不支持的格式"

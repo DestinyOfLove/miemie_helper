@@ -7,6 +7,7 @@ from pathlib import Path
 from src.core.extractor import compute_file_hash, extract_text
 from src.core.file_scanner import guess_year_from_path, scan_directory
 from src.core.parser import parse_document_fields
+from src.core.text_utils import normalize_text_for_indexing
 from src.search import document_db, fulltext_store, vector_store
 from src.search.embedding import encode_texts
 from src.search.models import DocumentRecord, IndexStatusResponse
@@ -201,17 +202,20 @@ def _index_file(file_path: Path, root: Path, directory_str: str) -> None:
         source_year=fields["来源年份"],
     )
 
-    # 存入 SQLite
+    # 存入 SQLite（保留原始文本，用于前端展示）
     document_db.upsert_document(doc)
 
-    # 存入 FTS5
+    # 为索引生成规范化文本（清理 PDF/OCR 无意义换行）
+    normalized_text = normalize_text_for_indexing(text) if text else text
+
+    # 存入 FTS5（使用规范化文本，提升分词和检索质量）
     fulltext_store.insert_fts_record(
         doc.id, doc.file_name, doc.title,
-        doc.doc_number, doc.issuing_authority, text,
+        doc.doc_number, doc.issuing_authority, normalized_text,
     )
     document_db.update_index_flags(doc.id, fts_indexed=True)
 
-    # 存入 ChromaDB（向量）
+    # 存入 ChromaDB（向量，使用规范化文本）
     if text:
         metadata = {
             "file_name": doc.file_name,
@@ -219,7 +223,7 @@ def _index_file(file_path: Path, root: Path, directory_str: str) -> None:
             "doc_number": doc.doc_number,
             "source_year": doc.source_year,
         }
-        chunks = vector_store.chunk_document(doc.id, text, metadata)
+        chunks = vector_store.chunk_document(doc.id, normalized_text, metadata)
         if chunks:
             embeddings = encode_texts([c["text"] for c in chunks])
             vector_store.add_document_chunks(chunks, embeddings)
