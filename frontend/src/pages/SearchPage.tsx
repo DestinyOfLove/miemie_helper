@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { KeyboardEvent } from 'react'
 import { AgGridReact } from 'ag-grid-react'
 import type { ColDef, GridReadyEvent } from 'ag-grid-community'
@@ -54,6 +54,7 @@ const SCOPE_OPTIONS: { value: SearchScope; label: string; tip: string }[] = [
 
 // ── 行数据 ──────────────────────────────────────────────────────
 interface RowData {
+  id: string        // 唯一行标识（每次搜索都重新生成，避免 AG Grid 复用旧单元格）
   doc_number: string
   folder: string
   file_name: string
@@ -151,8 +152,9 @@ function stripHtml(html: string): string {
 
 // ── Cell Renderers ──────────────────────────────────────────────
 function HtmlCell({ value }: { value: string }) {
+  const plainText = useMemo(() => stripHtml(value), [value])
   return (
-    <CopyableCell text={stripHtml(value)}>
+    <CopyableCell text={plainText}>
       <div
         dangerouslySetInnerHTML={{ __html: value }}
         style={{ padding: '8px 0', lineHeight: 1.8, whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}
@@ -162,8 +164,9 @@ function HtmlCell({ value }: { value: string }) {
 }
 
 function ContentCell({ value }: { value: string }) {
+  const plainText = useMemo(() => stripHtml(value), [value])
   return (
-    <CopyableCell text={stripHtml(value)}>
+    <CopyableCell text={plainText}>
       <div
         dangerouslySetInnerHTML={{ __html: value }}
         style={{
@@ -198,8 +201,6 @@ const colDefs: ColDef<RowData>[] = [
     sortable: true,
     filter: 'agTextColumnFilter',
     floatingFilter: true,
-    wrapText: true,
-    autoHeight: true,
     cellRenderer: TextCell,
     cellStyle: { fontSize: '0.82em', color: '#555' },
   },
@@ -212,8 +213,6 @@ const colDefs: ColDef<RowData>[] = [
     sortable: true,
     filter: 'agTextColumnFilter',
     floatingFilter: true,
-    wrapText: true,
-    autoHeight: true,
     cellRenderer: TextCell,
     cellStyle: { fontSize: '0.82em', color: '#666', wordBreak: 'break-all' },
   },
@@ -226,8 +225,6 @@ const colDefs: ColDef<RowData>[] = [
     sortable: true,
     filter: 'agTextColumnFilter',
     floatingFilter: true,
-    wrapText: true,
-    autoHeight: true,
     cellRenderer: TextCell,
     cellStyle: { fontWeight: 500 },
   },
@@ -237,7 +234,6 @@ const colDefs: ColDef<RowData>[] = [
     headerTooltip: '文档提取的完整原文，搜索关键词已高亮标记',
     flex: 3,
     minWidth: 320,
-    autoHeight: true,
     cellRenderer: ContentCell,
   },
   {
@@ -263,6 +259,7 @@ export function SearchPage() {
   const [rows, setRows] = useState<RowData[]>([])
   const [count, setCount] = useState<string>('')
   const [searching, setSearching] = useState(false)
+  const searchSeqRef = useRef(0)
 
   // 索引管理
   const [indexExpanded, setIndexExpanded] = useState(true)
@@ -367,17 +364,24 @@ export function SearchPage() {
     setSearching(true)
     setRows([])
     setCount('搜索中...')
+    const seq = ++searchSeqRef.current
 
     try {
       // 将所有 tag 用空格连接成查询词发给后端
       const query = allTerms.join(' ')
       const res = await api.search(query, scopes, selectedDirs)
+
+      // 若期间触发了新搜索，丢弃旧结果
+      if (seq !== searchSeqRef.current) return
+
       const merged = new Map<string, RowData>()
+      let idx = 0
 
       for (const r of res.fulltext_results) {
         const folder = r.file_path.replace(/[/\\][^/\\]+$/, '')
         const text = r.extracted_text || r.snippet || ''
         merged.set(r.doc_id, {
+          id: `${seq}-${idx++}`,
           doc_number: r.doc_number || '',
           folder,
           file_name: r.file_name,
@@ -394,6 +398,7 @@ export function SearchPage() {
           merged.get(r.doc_id)!.match_type = MATCH_BADGE['精确+语义']
         } else {
           merged.set(r.doc_id, {
+            id: `${seq}-${idx++}`,
             doc_number: r.doc_number || '',
             folder,
             file_name: r.file_name,
@@ -416,9 +421,11 @@ export function SearchPage() {
     }
   }
 
-  const onGridReady = (_: GridReadyEvent) => {
+  const getRowId = useCallback((params: { data: RowData }) => params.data.id, [])
+
+  const onGridReady = useCallback((_: GridReadyEvent) => {
     gridRef.current?.api.sizeColumnsToFit()
-  }
+  }, [])
 
   return (
     <div style={{ maxWidth: 1400, margin: '0 auto', padding: '24px' }}>
@@ -675,12 +682,13 @@ export function SearchPage() {
       {count && <div style={{ fontSize: 13, color: '#888', marginBottom: 8 }}>{count}</div>}
 
       {/* AG Grid */}
-      <div style={{ width: '100%' }}>
+      <div style={{ width: '100%', height: 600 }}>
         <AgGridReact
           ref={gridRef}
           rowData={rows}
           columnDefs={colDefs}
-          domLayout="autoHeight"
+          rowHeight={120}
+          getRowId={getRowId}
           defaultColDef={{ resizable: true }}
           localeText={AG_GRID_LOCALE_ZH}
           onGridReady={onGridReady}
