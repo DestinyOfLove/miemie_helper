@@ -101,30 +101,92 @@ function Tip({ text, children }: { text: string; children: React.ReactNode }) {
   )
 }
 
+// ── 复制按钮包装器 ──────────────────────────────────────────────
+function CopyableCell({ text, children }: { text: string; children: React.ReactNode }) {
+  const [copied, setCopied] = useState(false)
+
+  const handleCopy = async (e: React.MouseEvent) => {
+    e.stopPropagation()
+    try {
+      await navigator.clipboard.writeText(text)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 1500)
+    } catch { /* 降级：不处理 */ }
+  }
+
+  return (
+    <div className="copyable-cell" style={{ position: 'relative' }}>
+      {children}
+      <button
+        className="copy-btn"
+        onClick={handleCopy}
+        title="复制内容"
+        style={{
+          position: 'absolute',
+          right: 4,
+          bottom: 4,
+          padding: '2px 8px',
+          fontSize: 12,
+          background: copied ? '#4CAF50' : '#fff',
+          color: copied ? '#fff' : '#555',
+          border: '1px solid #ccc',
+          borderRadius: 4,
+          cursor: 'pointer',
+          opacity: 0,
+          transition: 'opacity 0.15s',
+          zIndex: 10,
+          lineHeight: 1.6,
+        }}
+      >
+        {copied ? '已复制' : '复制'}
+      </button>
+    </div>
+  )
+}
+
+// ── 从 HTML 中提取纯文本 ─────────────────────────────────────────
+function stripHtml(html: string): string {
+  const div = document.createElement('div')
+  div.innerHTML = html
+  return div.textContent || ''
+}
+
 // ── Cell Renderers ──────────────────────────────────────────────
 function HtmlCell({ value }: { value: string }) {
   return (
-    <div
-      dangerouslySetInnerHTML={{ __html: value }}
-      style={{ padding: '8px 0', lineHeight: 1.8, whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}
-    />
+    <CopyableCell text={stripHtml(value)}>
+      <div
+        dangerouslySetInnerHTML={{ __html: value }}
+        style={{ padding: '8px 0', lineHeight: 1.8, whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}
+      />
+    </CopyableCell>
   )
 }
 
 function ContentCell({ value }: { value: string }) {
   return (
-    <div
-      dangerouslySetInnerHTML={{ __html: value }}
-      style={{
-        padding: '8px 0',
-        lineHeight: 1.8,
-        fontSize: '0.85em',
-        whiteSpace: 'pre-wrap',
-        wordBreak: 'break-all',
-        maxHeight: '220px',
-        overflowY: 'auto',
-      }}
-    />
+    <CopyableCell text={stripHtml(value)}>
+      <div
+        dangerouslySetInnerHTML={{ __html: value }}
+        style={{
+          padding: '8px 0',
+          lineHeight: 1.8,
+          fontSize: '0.85em',
+          whiteSpace: 'pre-wrap',
+          wordBreak: 'break-all',
+          maxHeight: '220px',
+          overflowY: 'auto',
+        }}
+      />
+    </CopyableCell>
+  )
+}
+
+function TextCell({ value }: { value: string }) {
+  return (
+    <CopyableCell text={value || ''}>
+      <div style={{ padding: '8px 0' }}>{value}</div>
+    </CopyableCell>
   )
 }
 
@@ -140,6 +202,7 @@ const colDefs: ColDef<RowData>[] = [
     floatingFilter: true,
     wrapText: true,
     autoHeight: true,
+    cellRenderer: TextCell,
     cellStyle: { fontSize: '0.82em', color: '#555' },
   },
   {
@@ -153,6 +216,7 @@ const colDefs: ColDef<RowData>[] = [
     floatingFilter: true,
     wrapText: true,
     autoHeight: true,
+    cellRenderer: TextCell,
     cellStyle: { fontSize: '0.82em', color: '#666', wordBreak: 'break-all' },
   },
   {
@@ -166,6 +230,7 @@ const colDefs: ColDef<RowData>[] = [
     floatingFilter: true,
     wrapText: true,
     autoHeight: true,
+    cellRenderer: TextCell,
     cellStyle: { fontWeight: 500 },
   },
   {
@@ -529,6 +594,7 @@ export function SearchPage() {
           border: 5px solid transparent; border-top-color: #333;
         }
         .tip-wrap:hover .tip-bubble { visibility: visible; opacity: 1; }
+        .copyable-cell:hover .copy-btn { opacity: 1 !important; }
       `}</style>
     </div>
   )
