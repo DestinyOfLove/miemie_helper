@@ -106,7 +106,7 @@ _SCOPE_COLS = {
 def search_fulltext(query: str, scopes: list[str] | None = None,
                     directories: list[str] | None = None,
                     limit: int = 100, offset: int = 0) -> list[dict]:
-    """全文检索。返回 [{doc_id, rank, snippet}, ...]。
+    """全文检索（双引号精确匹配）。返回 [{doc_id, rank, snippet}, ...]。
 
     scopes: ["content"] | ["title"] | ["all"] 或任意组合，控制搜索范围。
     directories: 限制搜索的目录列表，None/空表示搜全部。
@@ -114,9 +114,17 @@ def search_fulltext(query: str, scopes: list[str] | None = None,
     offset: 偏移量，用于分页。
     """
     _ensure_fts_table()
-    segmented_query = segment_text(query)
-    if not segmented_query.strip():
+
+    # 双引号精确匹配：整个查询用双引号包裹，确保连续匹配
+    # 如果查询本身已包含双引号，直接使用
+    query = query.strip()
+    if not query:
         return []
+
+    # FTS5 短语匹配：用双引号包裹查询词
+    # 用户输入 "安全生产" -> FTS5 query: "安全生产"
+    # FTS5 会匹配包含完整连续短语 "安全生产" 的文档
+    fts_query = f'"{query}"'
 
     # 汇总所有要搜索的列（去重）
     if scopes:
@@ -127,9 +135,9 @@ def search_fulltext(query: str, scopes: list[str] | None = None,
     else:
         cols = _SCOPE_COLS["content"]
 
-    # FTS5 列限定语法：{col1 col2}: query
+    # FTS5 列限定语法：{col1 col2}: "phrase"
     col_expr = "{" + " ".join(cols) + "}"
-    fts_query = f"{col_expr}: {segmented_query}"
+    fts_query = f"{col_expr}: {fts_query}"
 
     conn = get_connection()
     try:

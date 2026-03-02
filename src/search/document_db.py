@@ -46,7 +46,6 @@ def _init_schema(conn: sqlite3.Connection) -> None:
             classification TEXT NOT NULL DEFAULT '',
             source_year TEXT NOT NULL DEFAULT '',
             indexed_at TEXT NOT NULL DEFAULT (datetime('now')),
-            vector_indexed INTEGER NOT NULL DEFAULT 0,
             fts_indexed INTEGER NOT NULL DEFAULT 0
         );
 
@@ -133,15 +132,15 @@ def upsert_document(doc: DocumentRecord) -> None:
             directory_root, extracted_text, extraction_method,
             doc_number, title, doc_date, issuing_authority, recipients,
             doc_type, classification, source_year,
-            indexed_at, vector_indexed, fts_indexed, processing_status)
+            indexed_at, fts_indexed, processing_status)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-                   datetime('now'), ?, ?, 'extracting')""",
+                   datetime('now'), ?, 'extracting')""",
         (doc.id, doc.file_path, doc.file_name, doc.file_size, doc.file_mtime,
          doc.file_hash, doc.directory_root, doc.extracted_text,
          doc.extraction_method, doc.doc_number, doc.title, doc.doc_date,
          doc.issuing_authority, doc.recipients, doc.doc_type,
          doc.classification, doc.source_year,
-         int(doc.vector_indexed), int(doc.fts_indexed)),
+         int(doc.fts_indexed)),
     )
     if not _in_batch:
         conn.commit()
@@ -221,15 +220,11 @@ def get_all_documents() -> list[DocumentRecord]:
     return [_row_to_document(row) for row in rows]
 
 
-def update_index_flags(doc_id: str, vector_indexed: bool | None = None,
-                       fts_indexed: bool | None = None) -> None:
+def update_index_flags(doc_id: str, fts_indexed: bool | None = None) -> None:
     """更新文档的索引标志。"""
     conn = get_connection()
     updates = []
     params = []
-    if vector_indexed is not None:
-        updates.append("vector_indexed = ?")
-        params.append(int(vector_indexed))
     if fts_indexed is not None:
         updates.append("fts_indexed = ?")
         params.append(int(fts_indexed))
@@ -388,7 +383,6 @@ def _row_to_document(row: sqlite3.Row) -> DocumentRecord:
         classification=row["classification"],
         source_year=row["source_year"],
         indexed_at=row["indexed_at"],
-        vector_indexed=bool(row["vector_indexed"]),
         fts_indexed=bool(row["fts_indexed"]),
         processing_status=row["processing_status"],
         error_message=row["error_message"],

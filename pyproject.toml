@@ -1,12 +1,10 @@
 [project]
 name = "miemie-helper"
 version = "0.1.0"
-description = "文档归档和搜索系统，支持全文检索和向量检索"
+description = "文档归档和搜索系统，支持全文检索"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
-    "chromadb>=1.5.2",
-    "fastembed",
     "filelock>=3.12",
     "jieba>=0.42.1",
     "fastapi>=0.115.0",

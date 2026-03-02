@@ -2,27 +2,13 @@
 
 import asyncio
 import os
+import re
 
 from nicegui import ui
 
 from src.search import document_db
 from src.search.indexer import indexing_status, start_indexing_background
 from src.ui.layout import create_header
-
-_MATCH_BADGE = {
-    "精确匹配": (
-        '<span style="background:#1565C0;color:#fff;padding:2px 10px;'
-        'border-radius:4px;font-size:0.8em;white-space:nowrap">精确匹配</span>'
-    ),
-    "语义匹配": (
-        '<span style="background:#E65100;color:#fff;padding:2px 10px;'
-        'border-radius:4px;font-size:0.8em;white-space:nowrap">语义匹配</span>'
-    ),
-    "精确+语义": (
-        '<span style="background:#6A1B9A;color:#fff;padding:2px 10px;'
-        'border-radius:4px;font-size:0.8em;white-space:nowrap">精确+语义</span>'
-    ),
-}
 
 
 @ui.page("/search", title="文档搜索 - MieMie Helper")
@@ -80,15 +66,11 @@ def search_page():
         results_grid = ui.aggrid({
             "columnDefs": [
                 {
-                    "field": "folder",
-                    "headerName": "文件夹",
-                    "flex": 1,
-                    "minWidth": 140,
+                    "field": "year",
+                    "headerName": "年份",
+                    "width": 80,
                     "sortable": True,
                     "filter": "agTextColumnFilter",
-                    "floatingFilter": True,
-                    "wrapText": True,
-                    "autoHeight": True,
                 },
                 {
                     "field": "file_name",
@@ -108,13 +90,6 @@ def search_page():
                     "minWidth": 320,
                     "autoHeight": True,
                     "wrapText": True,
-                },
-                {
-                    "field": "match_type",
-                    "headerName": "匹配方式",
-                    "width": 130,
-                    "sortable": True,
-                    "filter": "agTextColumnFilter",
                 },
             ],
             "rowData": [],
@@ -185,37 +160,26 @@ def search_page():
             results_count.text = "搜索中..."
 
             try:
-                from src.api.search_routes import _fulltext_search, _vector_search
+                from src.api.search_routes import _fulltext_search
 
+                # 仅使用全文检索（精准匹配），不启用向量检索
                 fts_results = _fulltext_search(query)
-                vec_results = _vector_search(query)
 
-                # 合并结果，按 doc_id 去重
-                merged: dict[str, dict] = {}
-
+                rows = []
                 for r in fts_results:
-                    merged[r.doc_id] = {
-                        "folder": os.path.dirname(r.file_path),
+                    # 从发文字号中提取年份
+                    year = ""
+                    if r.doc_number:
+                        match = re.search(r"[〔\[【（(]\s*(\d{4})\s*[〕\]】）)]", r.doc_number)
+                        if match:
+                            year = match.group(1)
+
+                    rows.append({
+                        "year": year,
                         "file_name": r.file_name,
                         "content": r.snippet or "",
-                        "match_type": _MATCH_BADGE["精确匹配"],
-                        "_match_key": "精确匹配",
-                    }
+                    })
 
-                for r in vec_results:
-                    if r.doc_id in merged:
-                        merged[r.doc_id]["match_type"] = _MATCH_BADGE["精确+语义"]
-                        merged[r.doc_id]["_match_key"] = "精确+语义"
-                    else:
-                        merged[r.doc_id] = {
-                            "folder": os.path.dirname(r.file_path),
-                            "file_name": r.file_name,
-                            "content": r.snippet or "",
-                            "match_type": _MATCH_BADGE["语义匹配"],
-                            "_match_key": "语义匹配",
-                        }
-
-                rows = list(merged.values())
                 results_grid.options["rowData"] = rows
                 results_grid.update()
                 results_count.text = f"共 {len(rows)} 条结果"

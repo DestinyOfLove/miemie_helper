@@ -415,49 +415,28 @@ export function SearchPage() {
     const seq = ++searchSeqRef.current
 
     try {
-      // 将所有 tag 用空格连接成查询词发给后端
+      // 将所有 tag 用空格连接成查询词发给后端（双引号精确匹配）
       const query = allTerms.join(' ')
       const res = await api.search(query, scopes, selectedDirs)
 
       // 若期间触发了新搜索，丢弃旧结果
       if (seq !== searchSeqRef.current) return
 
-      const merged = new Map<string, RowData>()
-      let idx = 0
-
-      for (const r of res.fulltext_results) {
+      // 只使用全文检索结果（双引号精确匹配）
+      const data = res.fulltext_results.map((r, i) => {
         const folder = r.file_path.replace(/[/\\][^/\\]+$/, '')
         const text = r.extracted_text || r.snippet || ''
-        merged.set(r.doc_id, {
-          id: `${seq}-${idx++}`,
+        return {
+          id: `${seq}-${i}`,
           doc_number: r.doc_number || '',
           folder,
           file_name: r.file_name,
           content: highlightText(text, allTerms),
           match_type: MATCH_BADGE['精确匹配'],
           _raw_text: text,
-        })
-      }
-
-      for (const r of res.vector_results) {
-        const folder = r.file_path.replace(/[/\\][^/\\]+$/, '')
-        const text = r.extracted_text || r.snippet || ''
-        if (merged.has(r.doc_id)) {
-          merged.get(r.doc_id)!.match_type = MATCH_BADGE['精确+语义']
-        } else {
-          merged.set(r.doc_id, {
-            id: `${seq}-${idx++}`,
-            doc_number: r.doc_number || '',
-            folder,
-            file_name: r.file_name,
-            content: highlightText(text, allTerms),
-            match_type: MATCH_BADGE['语义匹配'],
-            _raw_text: text,
-          })
         }
-      }
+      })
 
-      const data = Array.from(merged.values())
       setRows(data)
       setCount(`共 ${data.length} 条结果`)
       if (data.length === 0) setCount('无匹配结果')

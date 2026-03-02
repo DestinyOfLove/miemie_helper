@@ -15,20 +15,6 @@ DATA_DIR = Path(
 DB_DIR = DATA_DIR / "db"
 DB_PATH = DB_DIR / "documents.db"
 
-# ChromaDB 持久化存储
-CHROMA_DIR = DATA_DIR / "vector" / "chroma"
-
-# Embedding 模型缓存
-MODEL_DIR = DATA_DIR / "models"
-
-# Embedding 模型配置
-EMBEDDING_MODEL_NAME = "BAAI/bge-small-zh-v1.5"
-EMBEDDING_DIMENSION = 512
-
-# 文档分块参数
-CHUNK_SIZE = 400  # 字符
-CHUNK_OVERLAP = 80
-
 # 支持的文件扩展名
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".tiff", ".tif", ".bmp"}
 PDF_EXTENSIONS = {".pdf"}
@@ -58,12 +44,7 @@ INDEXING_WORKERS = int(os.environ.get("MIEMIE_INDEXING_WORKERS", "0"))
 # SQLite 批量提交大小
 BATCH_COMMIT_SIZE = 50
 
-# 向量检索返回的最大结果数
-VECTOR_SEARCH_TOP_K = 100
-
 
 def ensure_dirs() -> None:
     """确保运行时目录存在。"""
     DB_DIR.mkdir(parents=True, exist_ok=True)
-    CHROMA_DIR.mkdir(parents=True, exist_ok=True)
-    MODEL_DIR.mkdir(parents=True, exist_ok=True)

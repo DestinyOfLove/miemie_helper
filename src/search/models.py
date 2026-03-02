@@ -23,7 +23,6 @@ class DocumentRecord(BaseModel):
     classification: str = ""        # 密级
     source_year: str = ""           # 来源年份
     indexed_at: str = ""
-    vector_indexed: bool = False
     fts_indexed: bool = False
     processing_status: str = "indexed"
     error_message: str = ""
@@ -54,12 +53,6 @@ class SearchResult(BaseModel):
     snippet: str = ""
     extracted_text: str = ""        # 原始全文，用于前端高亮展示
     match_type: str = ""            # "vector" 或 "fulltext"
-
-
-class DualSearchResponse(BaseModel):
-    """双模式搜索响应。"""
-    vector_results: list[SearchResult] = []
-    fulltext_results: list[SearchResult] = []
 
 
 class IndexRequest(BaseModel):

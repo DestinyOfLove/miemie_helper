@@ -108,7 +108,6 @@ async def remove_directory_index(directory: str) -> dict:
         raise HTTPException(status_code=409, detail="索引任务正在运行中，请稍后再试")
 
     from src.search.fulltext_store import delete_fts_by_directory
-    from src.search.vector_store import delete_document_chunks
 
     # 获取该目录下所有文档 ID
     docs = document_db.get_documents_by_directory(directory)
@@ -116,10 +115,6 @@ async def remove_directory_index(directory: str) -> dict:
 
     # 删除 FTS5 记录
     delete_fts_by_directory(doc_ids)
-
-    # 删除 ChromaDB 分块
-    for doc_id in doc_ids:
-        delete_document_chunks(doc_id)
 
     # 删除 SQLite 文档记录
     count = document_db.delete_documents_by_directory(directory)

@@ -11,8 +11,7 @@ from src.core.extractor import compute_file_hash, extract_text
 from src.core.file_scanner import guess_year_from_path, scan_directory
 from src.core.parser import parse_document_fields
 from src.core.text_utils import normalize_text_for_indexing
-from src.search import document_db, fulltext_store, vector_store
-from src.search.embedding import encode_texts
+from src.search import document_db, fulltext_store
 from src.search.models import (
     DirectoryScanResult,
     DocumentRecord,
@@ -139,7 +138,6 @@ def run_indexing(directory: str) -> None:
     1. 扫描文件系统 + 变更检测
     2. 并行文本提取（ProcessPoolExecutor）
     3. 批量写入 SQLite + FTS5（批量事务）
-    4. 批量 Embedding + ChromaDB 写入
     """
     root = Path(directory).resolve()
     directory_str = str(root)
@@ -263,9 +261,6 @@ def run_indexing(directory: str) -> None:
                 indexing_status.added += 1
 
         # 分批写入
-        all_chunks: list[dict] = []
-        all_doc_ids_for_vector: list[str] = []
-
         for batch_start in range(0, len(successful_results), BATCH_COMMIT_SIZE):
             batch = successful_results[batch_start:batch_start + BATCH_COMMIT_SIZE]
 
@@ -310,22 +305,6 @@ def run_indexing(directory: str) -> None:
                     # 标记 FTS 已索引
                     document_db.update_index_flags(doc.id, fts_indexed=True)
 
-                    # 收集向量分块
-                    if result["text"]:
-                        metadata = {
-                            "file_name": doc.file_name,
-                            "title": doc.title,
-                            "doc_number": doc.doc_number,
-                            "source_year": doc.source_year,
-                            "directory_root": directory_str,
-                        }
-                        chunks = vector_store.chunk_document(
-                            doc.id, normalized_text or "", metadata
-                        )
-                        if chunks:
-                            all_chunks.extend(chunks)
-                            all_doc_ids_for_vector.append(doc.id)
-
                 # 批量写入 FTS5
                 fulltext_store.batch_insert_fts_records(fts_records)
 
@@ -334,65 +313,11 @@ def run_indexing(directory: str) -> None:
                 document_db.rollback_batch()
                 raise
 
-        # ── Phase 6: 批量 Embedding + ChromaDB 写入 ──
-        # 去重：内容相同的文件（相同 MD5）会产生相同 chunk_id，ChromaDB 单批次要求 ID 唯一
-        if all_chunks:
-            seen_ids: set[str] = set()
-            unique_chunks: list[dict] = []
-            dup_count = 0
-            for chunk in all_chunks:
-                cid = chunk["chunk_id"]
-                if cid not in seen_ids:
-                    seen_ids.add(cid)
-                    unique_chunks.append(chunk)
-                else:
-                    dup_count += 1
-            if dup_count > 0:
-                # 按 file_hash 分组，找出内容重复的文件
-                from collections import defaultdict
-                hash_to_files: dict[str, list[str]] = defaultdict(list)
-                for r in successful_results:
-                    # 用相对路径，区分不同子目录下的同名文件
-                    try:
-                        rel = str(Path(r["file_path"]).relative_to(root))
-                    except ValueError:
-                        rel = r["file_name"]
-                    hash_to_files[r["file_hash"]].append(rel)
-                dup_groups = {h: names for h, names in hash_to_files.items() if len(names) > 1}
-                lines = [f"发现 {len(dup_groups)} 组内容相同的文件（共 {dup_count} 个重复分块），已自动去重："]
-                for idx, names in enumerate(dup_groups.values(), 1):
-                    lines.append(f"  [{idx}] 共 {len(names)} 个文件：")
-                    for name in names:
-                        lines.append(f"    · {name}")
-                msg = "\n".join(lines)
-                logger.warning(msg)
-                indexing_status.warnings.append(msg)
-            all_chunks = unique_chunks
-
-        if all_chunks:
-            indexing_status.phase = "embedding"
-            all_texts = [c["text"] for c in all_chunks]
-            embeddings = encode_texts(all_texts, batch_size=64)
-            vector_store.batch_add_document_chunks(all_chunks, embeddings)
-
-            # 标记向量索引完成
-            document_db.begin_batch()
-            try:
-                for doc_id in set(all_doc_ids_for_vector):
-                    document_db.update_index_flags(doc_id, vector_indexed=True)
-                    document_db.mark_processing(doc_id, "indexed")
-                document_db.commit_batch()
-            except Exception:
-                document_db.rollback_batch()
-                raise
-
-        # 将没有向量索引的文档也标记为 indexed
+        # 标记所有文档为 indexed
         document_db.begin_batch()
         try:
-            vector_doc_ids = set(all_doc_ids_for_vector)
             for result in successful_results:
-                if result["file_hash"] not in vector_doc_ids:
-                    document_db.mark_processing(result["file_hash"], "indexed")
+                document_db.mark_processing(result["file_hash"], "indexed")
             document_db.commit_batch()
         except Exception:
             document_db.rollback_batch()
@@ -419,7 +344,6 @@ def run_indexing(directory: str) -> None:
 def _delete_document(doc_id: str) -> None:
     """从所有存储中删除文档。"""
     fulltext_store.delete_fts_record(doc_id)
-    vector_store.delete_document_chunks(doc_id)
     document_db.delete_document(doc_id)
 
 

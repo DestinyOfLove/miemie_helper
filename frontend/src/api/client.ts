@@ -16,9 +16,8 @@ export interface SearchResult {
   match_type: string
 }
 
-export interface DualSearchResponse {
+export interface SearchResponse {
   fulltext_results: SearchResult[]
-  vector_results: SearchResult[]
 }
 
 export interface DirectoryInfo {
@@ -80,7 +79,7 @@ export interface ArchiveStatus {
 }
 
 export const api = {
-  search: async (query: string, scopes: string[] = ['content'], directories: string[] = []): Promise<DualSearchResponse> => {
+  search: async (query: string, scopes: string[] = ['content'], directories: string[] = []): Promise<SearchResponse> => {
     const res = await fetch(`${BASE}/search/`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
