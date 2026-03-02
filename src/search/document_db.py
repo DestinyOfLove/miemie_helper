@@ -54,6 +54,12 @@ def _init_schema(conn: sqlite3.Connection) -> None:
             ON documents(file_path);
         CREATE INDEX IF NOT EXISTS idx_documents_directory_root
             ON documents(directory_root);
+        CREATE INDEX IF NOT EXISTS idx_documents_processing_status
+            ON documents(processing_status);
+        CREATE INDEX IF NOT EXISTS idx_documents_file_hash
+            ON documents(file_hash);
+        CREATE INDEX IF NOT EXISTS idx_documents_mtime
+            ON documents(file_mtime);
 
         CREATE TABLE IF NOT EXISTS indexed_directories (
             directory_path TEXT PRIMARY KEY,

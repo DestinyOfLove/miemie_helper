@@ -27,7 +27,7 @@ src/
 │   ├── extractor.py       # 文本提取：图片OCR / PDF / docx
 │   ├── parser.py          # 字段解析：正则提取发文字号、标题、日期等
 │   ├── file_scanner.py    # 目录扫描 + 年份推断
-│   └── excel_exporter.py  # DataFrame → Excel 导出
+│   └── text_utils.py      # 文本工具函数
 ├── search/                # 搜索引擎层
 │   ├── models.py          # Pydantic 数据模型
 │   ├── document_db.py     # SQLite 文档元数据 + 目录管理
@@ -37,13 +37,11 @@ src/
 │   └── indexer.py         # 增量索引编排器
 ├── api/                   # FastAPI REST 路由
 │   ├── index_routes.py    # /api/index/* — 索引管理
-│   ├── search_routes.py   # /api/search/* — 双模式搜索
-│   └── export_routes.py   # /api/export/* — Excel 导出
-├── ui/                    # NiceGUI 前端页面
-│   ├── layout.py          # 共享导航栏
-│   ├── home_page.py       # / — 工具集首页
-│   ├── search_page.py     # /search — 文档搜索（索引 + 双栏结果）
-│   └── archive_page.py    # /archive — 归档导出
+│   └── search_routes.py   # /api/search/* — 双模式搜索
+└── ui/                    # 前端页面
+    ├── layout.py          # 共享导航栏
+    ├── home_page.py       # / — 首页
+    └── search_page.py     # /search — 文档搜索
 └── doc_archive/           # CLI 入口（保留兼容）
     └── main.py
 

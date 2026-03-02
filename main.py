@@ -6,8 +6,6 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pathlib import Path
 
-from src.api.archive_routes import router as archive_router
-from src.api.export_routes import router as export_router
 from src.api.index_routes import router as index_router
 from src.api.search_routes import router as search_router
 
@@ -15,8 +13,6 @@ app = FastAPI(title="MieMie Helper")
 
 app.include_router(index_router)
 app.include_router(search_router)
-app.include_router(export_router)
-app.include_router(archive_router)
 
 STATIC_DIR = Path(__file__).parent / "static"
 

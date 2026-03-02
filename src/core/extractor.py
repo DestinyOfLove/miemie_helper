@@ -1,5 +1,6 @@
 """从不同格式的文件中提取文本内容。"""
 
+import gc
 import hashlib
 import logging
 import os
@@ -7,7 +8,7 @@ import platform
 import shutil
 import subprocess
 import tempfile
-import xml.etree.ElementTree as ET
+import defusedxml.ElementTree as ET
 import zipfile
 from pathlib import Path
 
@@ -77,32 +78,47 @@ def extract_from_image(file_path: Path) -> str:
 
 
 def extract_from_pdf(file_path: Path) -> str:
-    """从 PDF 文件提取文本。优先提取嵌入文本，否则 OCR。"""
+    """从 PDF 文件提取文本。优先提取嵌入文本，否则 OCR。
+
+    使用分批处理模式，每10页触发一次 GC，避免内存峰值。
+    """
     doc = pymupdf.open(file_path)
-    all_text = []
+    all_text: list[str] = []
+    page_count = len(doc)
+    batch_size = 10
 
-    for page in doc:
-        # 先尝试提取嵌入文本
-        text = page.get_text().strip()
-        if len(text) > 20:
-            all_text.append(text)
-        else:
-            # 文本太少，可能是扫描件，转图片做 OCR
-            pix = page.get_pixmap(dpi=OCR_DPI)
-            img_array = np.frombuffer(pix.samples, dtype=np.uint8).reshape(
-                pix.h, pix.w, pix.n
-            )
-            if pix.n == 4:  # RGBA -> RGB
-                img_array = img_array[:, :, :3]
-            preprocessed = preprocess_image(img_array)
-            ocr_text = ocr_image(preprocessed)
-            if ocr_text:
-                all_text.append(ocr_text)
-            # 显式释放大型图像数据，减少内存峰值
-            del img_array, preprocessed
-            pix = None
+    try:
+        for page_num in range(page_count):
+            page = doc.load_page(page_num)
 
-    doc.close()
+            # 先尝试提取嵌入文本
+            text = page.get_text().strip()
+            if len(text) > 20:
+                all_text.append(text)
+            else:
+                # 文本太少，可能是扫描件，转图片做 OCR
+                pix = page.get_pixmap(dpi=OCR_DPI)
+                img_array = np.frombuffer(pix.samples, dtype=np.uint8).reshape(
+                    pix.h, pix.w, pix.n
+                )
+                if pix.n == 4:  # RGBA -> RGB
+                    img_array = img_array[:, :, :3]
+                preprocessed = preprocess_image(img_array)
+                ocr_text = ocr_image(preprocessed)
+                if ocr_text:
+                    all_text.append(ocr_text)
+                # 显式释放大型图像数据，减少内存峰值
+                del img_array, preprocessed
+                pix = None
+
+            # 每处理10页触发一次 GC，减少内存峰值
+            if (page_num + 1) % batch_size == 0:
+                gc.collect()
+
+    finally:
+        # 确保释放 doc 对象
+        doc.close()
+
     return "\n".join(all_text)
 
 
