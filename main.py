@@ -1,15 +1,25 @@
 """MieMie Helper — 应用入口（FastAPI + React 静态文件）。"""
 
 import uvicorn
+from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pathlib import Path
 
 from src.api.index_routes import router as index_router
-from src.api.search_routes import router as search_router
+from src.api.search_routes import router as search_router, _cleanup_executor
 
-app = FastAPI(title="MieMie Helper")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """应用生命周期管理。"""
+    yield
+    # 关闭时清理线程池
+    _cleanup_executor()
+
+
+app = FastAPI(title="MieMie Helper", lifespan=lifespan)
 
 app.include_router(index_router)
 app.include_router(search_router)

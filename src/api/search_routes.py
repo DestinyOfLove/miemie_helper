@@ -3,7 +3,7 @@
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
 
-from fastapi import APIRouter
+from fastapi import APIRouter, FastAPI
 
 from src.search import document_db, fulltext_store, vector_store
 from src.search.embedding import encode_query
@@ -14,19 +14,35 @@ router = APIRouter(prefix="/api/search", tags=["search"])
 _executor = ThreadPoolExecutor(max_workers=4)
 
 
+def _run_in_executor(func, *args):
+    """在线程池中同步执行函数。"""
+    loop = asyncio.get_event_loop()
+    return loop.run_in_executor(_executor, func, *args)
+
+
+def _cleanup_executor():
+    """清理线程池执行器。"""
+    _executor.shutdown(wait=True)
+
+
+async def _run_parallel(*coros):
+    """并行执行多个协程。"""
+    return await asyncio.gather(*coros)
+
+
 @router.post("/", response_model=DualSearchResponse)
 async def dual_search(request: SearchRequest) -> DualSearchResponse:
     """同时执行全文检索和向量检索，返回双栏结果。"""
     dirs = request.directories or None
-    loop = asyncio.get_event_loop()
 
-    fulltext_results = await loop.run_in_executor(
-        _executor, _fulltext_search, request.query, request.scopes, dirs,
+    fulltext_coro = _run_in_executor(
+        _fulltext_search, request.query, request.scopes, dirs,
         request.limit, request.offset
     )
-    vector_results = await loop.run_in_executor(
-        _executor, _vector_search, request.query, dirs, request.limit, request.offset
+    vector_coro = _run_in_executor(
+        _vector_search, request.query, dirs, request.limit, request.offset
     )
+    fulltext_results, vector_results = await _run_parallel(fulltext_coro, vector_coro)
     return DualSearchResponse(
         fulltext_results=fulltext_results,
         vector_results=vector_results,
@@ -36,9 +52,8 @@ async def dual_search(request: SearchRequest) -> DualSearchResponse:
 @router.post("/fulltext", response_model=list[SearchResult])
 async def fulltext_search(request: SearchRequest) -> list[SearchResult]:
     """仅全文检索。"""
-    loop = asyncio.get_event_loop()
-    return await loop.run_in_executor(
-        _executor, _fulltext_search, request.query, request.scopes, request.directories,
+    return await _run_in_executor(
+        _fulltext_search, request.query, request.scopes, request.directories,
         request.limit, request.offset
     )
 
@@ -46,9 +61,8 @@ async def fulltext_search(request: SearchRequest) -> list[SearchResult]:
 @router.post("/vector", response_model=list[SearchResult])
 async def vector_search_endpoint(request: SearchRequest) -> list[SearchResult]:
     """仅向量检索。"""
-    loop = asyncio.get_event_loop()
-    return await loop.run_in_executor(
-        _executor, _vector_search, request.query, request.directories,
+    return await _run_in_executor(
+        _vector_search, request.query, request.directories,
         request.limit, request.offset
     )
 
