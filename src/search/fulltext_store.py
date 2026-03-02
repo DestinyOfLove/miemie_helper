@@ -104,11 +104,14 @@ _SCOPE_COLS = {
 
 
 def search_fulltext(query: str, scopes: list[str] | None = None,
-                    directories: list[str] | None = None) -> list[dict]:
-    """全文检索。返回 [{doc_id, rank, snippet}, ...]，不限数量。
+                    directories: list[str] | None = None,
+                    limit: int = 100, offset: int = 0) -> list[dict]:
+    """全文检索。返回 [{doc_id, rank, snippet}, ...]。
 
     scopes: ["content"] | ["title"] | ["all"] 或任意组合，控制搜索范围。
     directories: 限制搜索的目录列表，None/空表示搜全部。
+    limit: 限制返回结果数量。
+    offset: 偏移量，用于分页。
     """
     _ensure_fts_table()
     segmented_query = segment_text(query)
@@ -139,8 +142,9 @@ def search_fulltext(query: str, scopes: list[str] | None = None,
                    JOIN documents d ON d.id = f.doc_id
                    WHERE documents_fts MATCH ?
                      AND d.directory_root IN ({placeholders})
-                   ORDER BY f.rank""",
-                (fts_query, *directories),
+                   ORDER BY f.rank
+                   LIMIT ? OFFSET ?""",
+                (fts_query, *directories, limit, offset),
             )
         else:
             cursor = conn.execute(
@@ -148,8 +152,9 @@ def search_fulltext(query: str, scopes: list[str] | None = None,
                           snippet(documents_fts, 5, '<mark>', '</mark>', '...', 64) as snippet
                    FROM documents_fts
                    WHERE documents_fts MATCH ?
-                   ORDER BY rank""",
-                (fts_query,),
+                   ORDER BY rank
+                   LIMIT ? OFFSET ?""",
+                (fts_query, limit, offset),
             )
         return [
             {"doc_id": row[0], "rank": row[1], "snippet": row[2]}

@@ -1,5 +1,8 @@
 """搜索 API 路由。"""
 
+import asyncio
+from concurrent.futures import ThreadPoolExecutor
+
 from fastapi import APIRouter
 
 from src.search import document_db, fulltext_store, vector_store
@@ -8,13 +11,22 @@ from src.search.models import DualSearchResponse, SearchRequest, SearchResult
 
 router = APIRouter(prefix="/api/search", tags=["search"])
 
+_executor = ThreadPoolExecutor(max_workers=4)
+
 
 @router.post("/", response_model=DualSearchResponse)
 async def dual_search(request: SearchRequest) -> DualSearchResponse:
     """同时执行全文检索和向量检索，返回双栏结果。"""
     dirs = request.directories or None
-    fulltext_results = _fulltext_search(request.query, request.scopes, dirs)
-    vector_results = _vector_search(request.query, dirs)
+    loop = asyncio.get_event_loop()
+
+    fulltext_results = await loop.run_in_executor(
+        _executor, _fulltext_search, request.query, request.scopes, dirs,
+        request.limit, request.offset
+    )
+    vector_results = await loop.run_in_executor(
+        _executor, _vector_search, request.query, dirs, request.limit, request.offset
+    )
     return DualSearchResponse(
         fulltext_results=fulltext_results,
         vector_results=vector_results,
@@ -24,19 +36,28 @@ async def dual_search(request: SearchRequest) -> DualSearchResponse:
 @router.post("/fulltext", response_model=list[SearchResult])
 async def fulltext_search(request: SearchRequest) -> list[SearchResult]:
     """仅全文检索。"""
-    return _fulltext_search(request.query, request.scopes)
+    loop = asyncio.get_event_loop()
+    return await loop.run_in_executor(
+        _executor, _fulltext_search, request.query, request.scopes, request.directories,
+        request.limit, request.offset
+    )
 
 
 @router.post("/vector", response_model=list[SearchResult])
 async def vector_search_endpoint(request: SearchRequest) -> list[SearchResult]:
     """仅向量检索。"""
-    return _vector_search(request.query)
+    loop = asyncio.get_event_loop()
+    return await loop.run_in_executor(
+        _executor, _vector_search, request.query, request.directories,
+        request.limit, request.offset
+    )
 
 
 def _fulltext_search(query: str, scopes: list[str] | None = None,
-                     directories: list[str] | None = None) -> list[SearchResult]:
+                     directories: list[str] | None = None,
+                     limit: int = 100, offset: int = 0) -> list[SearchResult]:
     """执行全文检索并丰富元数据。"""
-    fts_results = fulltext_store.search_fulltext(query, scopes, directories)
+    fts_results = fulltext_store.search_fulltext(query, scopes, directories, limit, offset)
     if not fts_results:
         return []
 
@@ -66,11 +87,12 @@ def _fulltext_search(query: str, scopes: list[str] | None = None,
     return results
 
 
-def _vector_search(query: str, directories: list[str] | None = None) -> list[SearchResult]:
+def _vector_search(query: str, directories: list[str] | None = None,
+                  limit: int = 100, offset: int = 0) -> list[SearchResult]:
     """执行向量检索并丰富元数据。目录过滤下推到 ChromaDB 层。"""
     query_embedding = encode_query(query)
     chroma_results = vector_store.search_similar(
-        query_embedding, directories=directories
+        query_embedding, directories=directories, limit=limit, offset=offset
     )
 
     if not chroma_results["ids"] or not chroma_results["ids"][0]:

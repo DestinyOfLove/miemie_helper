@@ -118,14 +118,20 @@ def delete_document_chunks(doc_id: str) -> None:
 
 def search_similar(query_embedding: np.ndarray,
                    n_results: int = VECTOR_SEARCH_TOP_K,
-                   directories: list[str] | None = None) -> dict:
-    """向量相似度检索。返回 top-K 匹配结果，支持目录过滤。"""
+                   directories: list[str] | None = None,
+                   limit: int = 100, offset: int = 0) -> dict:
+    """向量相似度检索。返回 top-K 匹配结果，支持目录过滤和分页。
+
+    limit: 限制返回结果数量。
+    offset: 偏移量，用于分页。
+    """
     collection = get_collection()
     count = collection.count()
     if count == 0:
         return {"ids": [[]], "documents": [[]], "metadatas": [[]], "distances": [[]]}
 
-    actual_n = min(n_results, count)
+    # 获取足够多的结果以支持 offset
+    fetch_n = min(n_results + offset, count)
 
     # 构建目录过滤条件
     where = None
@@ -135,9 +141,17 @@ def search_similar(query_embedding: np.ndarray,
         else:
             where = {"directory_root": {"$in": directories}}
 
-    return collection.query(
+    results = collection.query(
         query_embeddings=[query_embedding.tolist()],
-        n_results=actual_n,
+        n_results=fetch_n,
         where=where,
         include=["documents", "metadatas", "distances"],
     )
+
+    # 应用 offset 和 limit
+    if offset > 0 or limit < fetch_n:
+        for key in ["ids", "documents", "metadatas", "distances"]:
+            if results[key] and results[key][0]:
+                results[key] = [results[key][0][offset:offset + limit]]
+
+    return results

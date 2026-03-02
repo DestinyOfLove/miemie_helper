@@ -33,7 +33,8 @@ class DocumentRecord(BaseModel):
 class SearchRequest(BaseModel):
     """搜索请求。"""
     query: str
-    max_results: int = 0  # 0 表示不限制，返回所有匹配
+    limit: int = 100  # 限制返回结果数量
+    offset: int = 0  # 偏移量，用于分页
     scopes: list[str] = ["content"]  # 搜索范围：content / title / all
     directories: list[str] = []  # 搜索目录过滤，空表示搜全部
 
