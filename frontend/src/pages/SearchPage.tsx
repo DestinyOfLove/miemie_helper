@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { KeyboardEvent } from 'react'
 import { AgGridReact } from 'ag-grid-react'
-import type { ColDef, GridReadyEvent } from 'ag-grid-community'
+import type { ColDef } from 'ag-grid-community'
 import { AllCommunityModule, ModuleRegistry } from 'ag-grid-community'
 import { api, type DirectoryInfo, type DirectoryScanResult, type IndexStatus } from '../api/client'
 
@@ -59,14 +59,7 @@ interface RowData {
   folder: string
   file_name: string
   content: string   // 已渲染 HTML，供 cellRenderer 使用
-  match_type: string
   _raw_text: string // 原始文本，供调试
-}
-
-const MATCH_BADGE: Record<string, string> = {
-  '精确匹配': '<span style="background:#1565C0;color:#fff;padding:2px 10px;border-radius:4px;font-size:0.78em;white-space:nowrap">精确匹配</span>',
-  '语义匹配': '<span style="background:#E65100;color:#fff;padding:2px 10px;border-radius:4px;font-size:0.78em;white-space:nowrap">语义匹配</span>',
-  '精确+语义': '<span style="background:#6A1B9A;color:#fff;padding:2px 10px;border-radius:4px;font-size:0.78em;white-space:nowrap">精确+语义</span>',
 }
 
 // ── 高亮函数 ────────────────────────────────────────────────────
@@ -151,18 +144,6 @@ function stripHtml(html: string): string {
 }
 
 // ── Cell Renderers ──────────────────────────────────────────────
-function HtmlCell({ value }: { value: string }) {
-  const plainText = useMemo(() => stripHtml(value), [value])
-  return (
-    <CopyableCell text={plainText}>
-      <div
-        dangerouslySetInnerHTML={{ __html: value }}
-        style={{ padding: '8px 0', lineHeight: 1.8, whiteSpace: 'normal', wordBreak: 'break-all' }}
-      />
-    </CopyableCell>
-  )
-}
-
 function ContentCell({ value }: { value: string }) {
   const plainText = useMemo(() => stripHtml(value), [value])
   return (
@@ -240,16 +221,6 @@ const colDefs: ColDef<RowData>[] = [
     minWidth: 320,
     cellRenderer: ContentCell,
   },
-  {
-    field: 'match_type',
-    headerName: '匹配方式',
-    headerTooltip: '精确匹配 = 关键词逐字匹配；语义匹配 = 含义相近；精确+语义 = 两者都命中',
-    width: 120,
-    sortable: true,
-    filter: 'agTextColumnFilter',
-    cellRenderer: HtmlCell,
-    cellStyle: { display: 'flex', alignItems: 'center', justifyContent: 'center' },
-  },
 ]
 
 // ── 主组件 ──────────────────────────────────────────────────────
@@ -288,7 +259,9 @@ export function SearchPage() {
         const starred = dirs.filter(d => d.starred).map(d => d.directory_path)
         return starred.length > 0 ? starred : dirs.map(d => d.directory_path)
       })
-    } catch (_) {}
+    } catch {
+      // 初始目录加载失败时保持页面可用，交由后续用户操作重试。
+    }
   }, [])
 
   const doScanChanges = useCallback(async () => {
@@ -298,7 +271,9 @@ export function SearchPage() {
       const map: Record<string, DirectoryScanResult> = {}
       for (const r of res.results) map[r.directory_path] = r
       setScanResults(map)
-    } catch (_) {}
+    } catch {
+      // 扫描失败不阻塞页面其他功能。
+    }
     setScanning(false)
   }, [])
 
@@ -432,7 +407,6 @@ export function SearchPage() {
           folder,
           file_name: r.file_name,
           content: highlightText(text, allTerms),
-          match_type: MATCH_BADGE['精确匹配'],
           _raw_text: text,
         }
       })
@@ -450,7 +424,7 @@ export function SearchPage() {
 
   const getRowId = useCallback((params: { data: RowData }) => params.data.id, [])
 
-  const onGridReady = useCallback((_: GridReadyEvent) => {
+  const onGridReady = useCallback(() => {
     gridRef.current?.api.sizeColumnsToFit()
   }, [])
 
@@ -709,7 +683,9 @@ export function SearchPage() {
                       setDirectories(prev => prev.map(dir =>
                         dir.directory_path === d.directory_path ? { ...dir, starred: res.starred } : dir
                       ))
-                    } catch (_) {}
+                    } catch {
+                      // 星标切换失败时保持当前显示状态。
+                    }
                   }}
                   title={d.starred ? '取消星标' : '设为默认'}
                   style={{

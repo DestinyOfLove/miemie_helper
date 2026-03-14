@@ -13,7 +13,6 @@ export interface SearchResult {
   score: number
   snippet: string
   extracted_text: string
-  match_type: string
 }
 
 export interface SearchResponse {

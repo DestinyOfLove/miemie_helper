@@ -4,7 +4,7 @@ const tools = [
   {
     icon: '🔍',
     title: '文档搜索',
-    desc: '在公文文件中搜索关键词或语义内容。支持全文精确匹配和向量语义检索。',
+    desc: '在公文文件中搜索关键词。支持全文精确匹配，并可按字段范围检索。',
     sub: 'PDF / DOCX / JPG / PNG / TIFF / BMP',
     to: '/search',
   },
