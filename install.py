@@ -69,7 +69,7 @@ def main() -> None:
     if not run([npm, "install"], cwd=frontend):
         sys.exit("npm install failed")
 
-    print("\n  -- npm run build --")
+    print("\n  -- npm run build (Next.js static export) --")
     if not run([npm, "run", "build"], cwd=frontend):
         sys.exit("npm run build failed")
 

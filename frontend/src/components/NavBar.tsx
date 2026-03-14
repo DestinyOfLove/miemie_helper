@@ -1,6 +1,11 @@
-import { NavLink } from 'react-router-dom'
+'use client'
+
+import Link from 'next/link'
+import { usePathname } from 'next/navigation'
 
 export function NavBar() {
+  const pathname = usePathname()
+
   return (
     <nav style={{
       background: '#1976D2',
@@ -18,20 +23,19 @@ export function NavBar() {
         { to: '/search', label: '文档搜索' },
         { to: '/archive', label: '归档导出' },
       ].map(({ to, label }) => (
-        <NavLink
+        <Link
           key={to}
-          to={to}
-          end={to === '/'}
-          style={({ isActive }) => ({
+          href={to}
+          style={{
             color: '#fff',
             textDecoration: 'none',
-            borderBottom: isActive ? '2px solid #fff' : '2px solid transparent',
+            borderBottom: pathname === to ? '2px solid #fff' : '2px solid transparent',
             paddingBottom: 2,
-            fontWeight: isActive ? 600 : 400,
-          })}
+            fontWeight: pathname === to ? 600 : 400,
+          }}
         >
           {label}
-        </NavLink>
+        </Link>
       ))}
     </nav>
   )

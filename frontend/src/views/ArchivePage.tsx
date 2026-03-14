@@ -1,3 +1,5 @@
+'use client'
+
 import { useRef, useState } from 'react'
 import { api, type ArchiveStatus } from '../api/client'
 
@@ -21,7 +23,6 @@ export function ArchivePage() {
       pollRef.current = setInterval(async () => {
         const s = await api.archiveStatus()
         setStatus(s)
-        // 自动滚到底
         if (logRef.current) logRef.current.scrollTop = logRef.current.scrollHeight
         if (!s.is_running && s.phase !== 'idle') {
           clearInterval(pollRef.current!)
@@ -65,7 +66,6 @@ export function ArchivePage() {
 
       {status && (
         <>
-          {/* 进度条 */}
           <div style={{ marginBottom: 12 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, color: '#555', marginBottom: 4 }}>
               <span>{status.phase}</span>
@@ -76,7 +76,6 @@ export function ArchivePage() {
             </div>
           </div>
 
-          {/* 日志 */}
           <pre
             ref={logRef}
             style={{

@@ -4,25 +4,28 @@
 
 - `main.py`
   - 当前 Web 应用入口。
-  - 启动 FastAPI，并挂载 `static/` 下的 React 构建产物。
+  - 启动 FastAPI，并挂载 `frontend/out/` 下的 Next.js 静态导出产物。
 - `start.py`
   - 跨平台启动包装器。
-  - 缺少 `.venv/` 或 `static/index.html` 时会自动补依赖 / 构建前端。
+  - 缺少 `.venv/` 或 `frontend/out/index.html` 时会自动补依赖 / 构建前端。
 - `install.py`
   - 首次安装脚本。
   - 负责检查 Python / uv / Node.js，然后执行 `uv sync` 与前端构建。
 
 ## Frontend
 
-- `frontend/src/pages/`
-  - React 页面入口。
+- `frontend/app/`
+  - Next.js App Router 入口。
+  - `page.tsx`、`search/page.tsx`、`archive/page.tsx` 定义页面路由。
+- `frontend/src/views/`
+  - 主要页面视图组件。
   - `HomePage.tsx` 是首页，`SearchPage.tsx` 是主要搜索界面，`ArchivePage.tsx` 是归档导出界面。
 - `frontend/src/api/client.ts`
   - 前端对 `/api/*` 的 fetch 封装。
 - `frontend/src/components/`
   - 共享前端组件。
-- `static/`
-  - 前端构建产物。
+- `frontend/out/`
+  - Next.js 静态导出产物。
   - 视为生成目录，不要手改。
 
 ## Backend

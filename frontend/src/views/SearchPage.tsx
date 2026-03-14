@@ -1,5 +1,7 @@
+'use client'
+
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { KeyboardEvent } from 'react'
+import type { KeyboardEvent, ReactNode } from 'react'
 import { AgGridReact } from 'ag-grid-react'
 import type { ColDef } from 'ag-grid-community'
 import { AllCommunityModule, ModuleRegistry } from 'ag-grid-community'
@@ -7,9 +9,7 @@ import { api, type DirectoryInfo, type DirectoryScanResult, type IndexStatus } f
 
 ModuleRegistry.registerModules([AllCommunityModule])
 
-// ── AG Grid 中文本地化 ──────────────────────────────────────────
 const AG_GRID_LOCALE_ZH: Record<string, string> = {
-  // 筛选器
   contains: '包含',
   notContains: '不包含',
   equals: '等于',
@@ -22,7 +22,6 @@ const AG_GRID_LOCALE_ZH: Record<string, string> = {
   applyFilter: '应用',
   resetFilter: '重置',
   clearFilter: '清除',
-  // 通用
   noRowsToShow: '暂无数据',
   page: '页',
   of: '/',
@@ -33,7 +32,6 @@ const AG_GRID_LOCALE_ZH: Record<string, string> = {
   first: '第一页',
   last: '最后一页',
   loadingOoo: '加载中...',
-  // 列菜单
   pinColumn: '固定列',
   autosizeThisColumn: '自适应列宽',
   autosizeAllColumns: '自适应所有列宽',
@@ -43,7 +41,6 @@ const AG_GRID_LOCALE_ZH: Record<string, string> = {
   sortUnSort: '取消排序',
 }
 
-// ── 搜索范围 ────────────────────────────────────────────────────
 type SearchScope = 'content' | 'title' | 'all'
 
 const SCOPE_OPTIONS: { value: SearchScope; label: string; tip: string }[] = [
@@ -52,17 +49,15 @@ const SCOPE_OPTIONS: { value: SearchScope; label: string; tip: string }[] = [
   { value: 'all', label: '全文', tip: '搜索所有字段：文件名、标题、发文字号、发文机关、正文' },
 ]
 
-// ── 行数据 ──────────────────────────────────────────────────────
 interface RowData {
-  id: string        // 唯一行标识（每次搜索都重新生成，避免 AG Grid 复用旧单元格）
+  id: string
   doc_number: string
   folder: string
   file_name: string
-  content: string   // 已渲染 HTML，供 cellRenderer 使用
-  _raw_text: string // 原始文本，供调试
+  content: string
+  _raw_text: string
 }
 
-// ── 高亮函数 ────────────────────────────────────────────────────
 function escapeRegex(s: string) {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
@@ -70,7 +65,6 @@ function escapeRegex(s: string) {
 function highlightText(text: string, terms: string[]): string {
   if (!text || terms.length === 0) return escapeHtml(text)
   const escaped = escapeHtml(text)
-  // 按长度降序排，长词优先匹配，避免短词把长词拆散
   const sorted = [...terms].sort((a, b) => b.length - a.length)
   const pattern = sorted.map(escapeRegex).join('|')
   return escaped.replace(new RegExp(`(${pattern})`, 'gi'), '<mark>$1</mark>')
@@ -83,8 +77,7 @@ function escapeHtml(s: string) {
     .replace(/>/g, '&gt;')
 }
 
-// ── Tooltip 组件（纯 CSS，零依赖）────────────────────────────────
-function Tip({ text, children }: { text: string; children: React.ReactNode }) {
+function Tip({ text, children }: { text: string; children: ReactNode }) {
   return (
     <span className="tip-wrap" style={{ position: 'relative', display: 'inline-flex' }}>
       {children}
@@ -93,8 +86,7 @@ function Tip({ text, children }: { text: string; children: React.ReactNode }) {
   )
 }
 
-// ── 复制按钮包装器 ──────────────────────────────────────────────
-function CopyableCell({ text, children }: { text: string; children: React.ReactNode }) {
+function CopyableCell({ text, children }: { text: string; children: ReactNode }) {
   const [copied, setCopied] = useState(false)
 
   const handleCopy = async (e: React.MouseEvent) => {
@@ -103,7 +95,9 @@ function CopyableCell({ text, children }: { text: string; children: React.ReactN
       await navigator.clipboard.writeText(text)
       setCopied(true)
       setTimeout(() => setCopied(false), 1500)
-    } catch { /* 降级：不处理 */ }
+    } catch {
+      // Clipboard copy is best-effort only.
+    }
   }
 
   return (
@@ -136,14 +130,12 @@ function CopyableCell({ text, children }: { text: string; children: React.ReactN
   )
 }
 
-// ── 从 HTML 中提取纯文本 ─────────────────────────────────────────
 function stripHtml(html: string): string {
   const div = document.createElement('div')
   div.innerHTML = html
   return div.textContent || ''
 }
 
-// ── Cell Renderers ──────────────────────────────────────────────
 function ContentCell({ value }: { value: string }) {
   const plainText = useMemo(() => stripHtml(value), [value])
   return (
@@ -172,7 +164,6 @@ function TextCell({ value }: { value: string }) {
   )
 }
 
-// ── 列定义 ──────────────────────────────────────────────────────
 const colDefs: ColDef<RowData>[] = [
   {
     field: 'doc_number',
@@ -223,12 +214,9 @@ const colDefs: ColDef<RowData>[] = [
   },
 ]
 
-// ── 主组件 ──────────────────────────────────────────────────────
 export function SearchPage() {
-  // 搜索词 Tags
   const [tags, setTags] = useState<string[]>([])
   const [inputVal, setInputVal] = useState('')
-  // 搜索范围（多选）
   const [scopes, setScopes] = useState<SearchScope[]>(['content'])
 
   const [rows, setRows] = useState<RowData[]>([])
@@ -236,7 +224,6 @@ export function SearchPage() {
   const [searching, setSearching] = useState(false)
   const searchSeqRef = useRef(0)
 
-  // 索引管理
   const [indexExpanded, setIndexExpanded] = useState(true)
   const [dirInput, setDirInput] = useState('')
   const [indexStatus, setIndexStatus] = useState<IndexStatus | null>(null)
@@ -253,14 +240,13 @@ export function SearchPage() {
     try {
       const dirs = await api.indexDirectories()
       setDirectories(dirs)
-      // 用星标目录初始化 selectedDirs（仅在 selectedDirs 为空且 dirs 存在时）
       setSelectedDirs(prev => {
         if (prev.length > 0) return prev
         const starred = dirs.filter(d => d.starred).map(d => d.directory_path)
         return starred.length > 0 ? starred : dirs.map(d => d.directory_path)
       })
     } catch {
-      // 初始目录加载失败时保持页面可用，交由后续用户操作重试。
+      // Initial directory load failure should not block page rendering.
     }
   }, [])
 
@@ -272,7 +258,7 @@ export function SearchPage() {
       for (const r of res.results) map[r.directory_path] = r
       setScanResults(map)
     } catch {
-      // 扫描失败不阻塞页面其他功能。
+      // Scan failures are non-fatal for the rest of the page.
     }
     setScanning(false)
   }, [])
@@ -281,7 +267,6 @@ export function SearchPage() {
     loadDirectories().then(() => doScanChanges())
   }, [loadDirectories, doScanChanges])
 
-  // ── Tag 输入处理 ──────────────────────────────────────────────
   const commitTag = () => {
     const v = inputVal.trim()
     if (v && !tags.includes(v)) setTags(prev => [...prev, v])
@@ -291,10 +276,8 @@ export function SearchPage() {
   const handleKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter') {
       if (inputVal.trim()) {
-        // 有内容：提交为 tag
         commitTag()
       } else {
-        // 空内容：触发搜索
         doSearch()
       }
     } else if (e.key === 'Backspace' && inputVal === '' && tags.length > 0) {
@@ -307,12 +290,11 @@ export function SearchPage() {
   const toggleScope = (s: SearchScope) => {
     setScopes(prev =>
       prev.includes(s)
-        ? prev.length > 1 ? prev.filter(x => x !== s) : prev  // 至少保留一个
-        : [...prev, s]
+        ? prev.length > 1 ? prev.filter(x => x !== s) : prev
+        : [...prev, s],
     )
   }
 
-  // ── 索引 ─────────────────────────────────────────────────────
   const startIndexing = async () => {
     if (!dirInput.trim()) return
     try {
@@ -327,7 +309,9 @@ export function SearchPage() {
           await loadDirectories()
         }
       }, 600)
-    } catch (e: unknown) { alert(String(e)) }
+    } catch (e: unknown) {
+      alert(String(e))
+    }
   }
 
   const deleteDirectory = async (dir: string) => {
@@ -335,9 +319,10 @@ export function SearchPage() {
     try {
       await api.deleteDirectory(dir)
       await loadDirectories()
-      // 同步清理 selectedDirs
       setSelectedDirs(prev => prev.filter(d => d !== dir))
-    } catch (e: unknown) { alert(String(e)) }
+    } catch (e: unknown) {
+      alert(String(e))
+    }
   }
 
   const refreshDirectory = async (dir: string) => {
@@ -354,7 +339,9 @@ export function SearchPage() {
           await doScanChanges()
         }
       }, 600)
-    } catch (e: unknown) { alert(String(e)) }
+    } catch (e: unknown) {
+      alert(String(e))
+    }
   }
 
   const rebuildDirectory = async (dir: string) => {
@@ -371,18 +358,18 @@ export function SearchPage() {
           await loadDirectories()
         }
       }, 600)
-    } catch (e: unknown) { alert(String(e)) }
+    } catch (e: unknown) {
+      alert(String(e))
+    }
   }
 
-  // ── 搜索 ─────────────────────────────────────────────────────
   const doSearch = async () => {
-    // 把当前输入框内容也纳入 tags（若有）
     const allTerms = inputVal.trim()
       ? [...tags, inputVal.trim()]
       : [...tags]
 
     if (allTerms.length === 0) return
-    if (inputVal.trim()) { commitTag() }
+    if (inputVal.trim()) commitTag()
 
     setSearching(true)
     setRows([])
@@ -390,14 +377,11 @@ export function SearchPage() {
     const seq = ++searchSeqRef.current
 
     try {
-      // 将所有 tag 用空格连接成查询词发给后端（双引号精确匹配）
       const query = allTerms.join(' ')
       const res = await api.search(query, scopes, selectedDirs)
 
-      // 若期间触发了新搜索，丢弃旧结果
       if (seq !== searchSeqRef.current) return
 
-      // 只使用全文检索结果（双引号精确匹配）
       const data = res.map((r, i) => {
         const folder = r.file_path.replace(/[/\\][^/\\]+$/, '')
         const text = r.extracted_text || r.snippet || ''
@@ -412,8 +396,7 @@ export function SearchPage() {
       })
 
       setRows(data)
-      setCount(`共 ${data.length} 条结果`)
-      if (data.length === 0) setCount('无匹配结果')
+      setCount(data.length === 0 ? '无匹配结果' : `共 ${data.length} 条结果`)
     } catch (e: unknown) {
       alert(`搜索出错: ${String(e)}`)
       setCount('')
@@ -432,7 +415,6 @@ export function SearchPage() {
     <div style={{ maxWidth: 1400, margin: '0 auto', padding: '24px' }}>
       <h1 style={{ fontSize: 26, marginBottom: 20 }}>文档搜索</h1>
 
-      {/* 索引管理 */}
       <div style={{ border: '1px solid #e0e0e0', borderRadius: 8, marginBottom: 20 }}>
         <div
           onClick={() => setIndexExpanded(!indexExpanded)}
@@ -461,13 +443,31 @@ export function SearchPage() {
               <div style={{ marginTop: 10 }}>
                 <div style={{ padding: '10px 12px', background: '#f5f5f5', borderRadius: 6, fontSize: 13, color: '#555' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: indexStatus.is_running && indexStatus.total_files > 0 ? 8 : 0 }}>
-                    <span style={{
-                      padding: '2px 8px', borderRadius: 4, fontSize: 12, fontWeight: 600, color: '#fff',
-                      background: indexStatus.phase === 'complete' ? '#4CAF50'
-                        : indexStatus.phase === 'error' ? '#D32F2F'
-                        : indexStatus.is_running ? '#1976D2' : '#9E9E9E',
-                    }}>
-                      {{ scanning: '扫描中', extracting: '提取中', indexing: '写入索引', embedding: '生成向量', complete: '完成', error: '出错', idle: '空闲' }[indexStatus.phase] || indexStatus.phase}
+                    <span
+                      style={{
+                        padding: '2px 8px',
+                        borderRadius: 4,
+                        fontSize: 12,
+                        fontWeight: 600,
+                        color: '#fff',
+                        background: indexStatus.phase === 'complete'
+                          ? '#4CAF50'
+                          : indexStatus.phase === 'error'
+                            ? '#D32F2F'
+                            : indexStatus.is_running
+                              ? '#1976D2'
+                              : '#9E9E9E',
+                      }}
+                    >
+                      {{
+                        scanning: '扫描中',
+                        extracting: '提取中',
+                        indexing: '写入索引',
+                        embedding: '生成向量',
+                        complete: '完成',
+                        error: '出错',
+                        idle: '空闲',
+                      }[indexStatus.phase] || indexStatus.phase}
                     </span>
                     {indexStatus.is_running && indexStatus.total_files > 0 && (
                       <span style={{ fontWeight: 500 }}>
@@ -475,23 +475,27 @@ export function SearchPage() {
                       </span>
                     )}
                     {indexStatus.current_file && (
-                      <span style={{ color: '#888', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}
-                        title={indexStatus.current_file}>
+                      <span
+                        style={{ color: '#888', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}
+                        title={indexStatus.current_file}
+                      >
                         {indexStatus.current_file}
                       </span>
                     )}
                   </div>
-                  {/* 进度条 */}
                   {indexStatus.is_running && indexStatus.total_files > 0 && (
                     <div style={{ background: '#e0e0e0', borderRadius: 4, height: 6, overflow: 'hidden', marginBottom: 6 }}>
-                      <div style={{
-                        height: '100%', borderRadius: 4, transition: 'width 0.3s ease',
-                        width: `${Math.round((indexStatus.processed_files / indexStatus.total_files) * 100)}%`,
-                        background: 'linear-gradient(90deg, #42A5F5, #1976D2)',
-                      }} />
+                      <div
+                        style={{
+                          height: '100%',
+                          borderRadius: 4,
+                          transition: 'width 0.3s ease',
+                          width: `${Math.round((indexStatus.processed_files / indexStatus.total_files) * 100)}%`,
+                          background: 'linear-gradient(90deg, #42A5F5, #1976D2)',
+                        }}
+                      />
                     </div>
                   )}
-                  {/* 计数器 —— 完成或有计数时显示 */}
                   {(indexStatus.added > 0 || indexStatus.updated > 0 || indexStatus.deleted > 0 || indexStatus.skipped > 0 || indexStatus.phase === 'complete') && (
                     <div style={{ fontSize: 12, color: '#777', display: 'flex', gap: 12 }}>
                       {indexStatus.added > 0 && <span style={{ color: '#2E7D32' }}>+{indexStatus.added} 新增</span>}
@@ -527,7 +531,7 @@ export function SearchPage() {
                   <tbody>
                     {directories.map(d => {
                       const scan = scanResults[d.directory_path]
-                      let changeCell: React.ReactNode
+                      let changeCell: ReactNode
                       if (scanning) {
                         changeCell = <span style={{ color: '#999' }}>扫描中...</span>
                       } else if (!scan) {
@@ -535,7 +539,7 @@ export function SearchPage() {
                       } else if (scan.error) {
                         changeCell = <span style={{ color: '#D32F2F' }} title={scan.error}>错误</span>
                       } else {
-                        const parts: React.ReactNode[] = []
+                        const parts: ReactNode[] = []
                         if (scan.new_count > 0) parts.push(<span key="new" style={{ color: '#2E7D32' }}>+{scan.new_count} 新增</span>)
                         if (scan.deleted_count > 0) parts.push(<span key="del" style={{ color: '#D32F2F' }}>-{scan.deleted_count} 删除</span>)
                         if (scan.modified_count > 0) parts.push(<span key="mod" style={{ color: '#E65100' }}>~{scan.modified_count} 修改</span>)
@@ -554,7 +558,6 @@ export function SearchPage() {
                           <td style={{ padding: '6px 10px' }}>{d.last_scan_at}</td>
                           <td style={{ padding: '6px 10px', whiteSpace: 'nowrap' }}>
                             {(() => {
-                              const scan = scanResults[d.directory_path]
                               const hasChanges = scan && !scan.error && (scan.new_count + scan.deleted_count + scan.modified_count + scan.renamed_count > 0)
                               return (
                                 <button
@@ -562,9 +565,14 @@ export function SearchPage() {
                                   disabled={indexing}
                                   title="增量刷新：只处理新增、修改、删除的文件"
                                   style={{
-                                    padding: '2px 10px', fontSize: 12, marginRight: 6,
-                                    background: hasChanges ? '#4CAF50' : '#9E9E9E', color: '#fff', border: 'none',
-                                    borderRadius: 4, cursor: indexing ? 'not-allowed' : 'pointer',
+                                    padding: '2px 10px',
+                                    fontSize: 12,
+                                    marginRight: 6,
+                                    background: hasChanges ? '#4CAF50' : '#9E9E9E',
+                                    color: '#fff',
+                                    border: 'none',
+                                    borderRadius: 4,
+                                    cursor: indexing ? 'not-allowed' : 'pointer',
                                     opacity: indexing ? 0.5 : 1,
                                     fontWeight: hasChanges ? 600 : 400,
                                   }}
@@ -578,9 +586,14 @@ export function SearchPage() {
                               disabled={indexing}
                               title="删除旧索引并重新全量索引"
                               style={{
-                                padding: '2px 10px', fontSize: 12, marginRight: 6,
-                                background: '#FF9800', color: '#fff', border: 'none',
-                                borderRadius: 4, cursor: indexing ? 'not-allowed' : 'pointer',
+                                padding: '2px 10px',
+                                fontSize: 12,
+                                marginRight: 6,
+                                background: '#FF9800',
+                                color: '#fff',
+                                border: 'none',
+                                borderRadius: 4,
+                                cursor: indexing ? 'not-allowed' : 'pointer',
                                 opacity: indexing ? 0.5 : 1,
                               }}
                             >
@@ -591,9 +604,13 @@ export function SearchPage() {
                               disabled={indexing}
                               title="删除该目录的全部索引数据"
                               style={{
-                                padding: '2px 10px', fontSize: 12,
-                                background: '#D32F2F', color: '#fff', border: 'none',
-                                borderRadius: 4, cursor: indexing ? 'not-allowed' : 'pointer',
+                                padding: '2px 10px',
+                                fontSize: 12,
+                                background: '#D32F2F',
+                                color: '#fff',
+                                border: 'none',
+                                borderRadius: 4,
+                                cursor: indexing ? 'not-allowed' : 'pointer',
                                 opacity: indexing ? 0.5 : 1,
                               }}
                             >
@@ -611,7 +628,6 @@ export function SearchPage() {
         )}
       </div>
 
-      {/* 搜索范围 */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
         <Tip text="选择要搜索的字段范围，可多选">
           <span style={{ fontSize: 13, color: '#666', cursor: 'help', borderBottom: '1px dashed #aaa' }}>搜索范围：</span>
@@ -640,7 +656,6 @@ export function SearchPage() {
         })}
       </div>
 
-      {/* 搜索目录选择（仅目录数 > 1 时显示） */}
       {directories.length > 1 && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10, flexWrap: 'wrap' }}>
           <Tip text="选择要搜索的目录范围，可多选。星标目录在页面加载时自动选中">
@@ -681,10 +696,10 @@ export function SearchPage() {
                     try {
                       const res = await api.toggleDirectoryStar(d.directory_path)
                       setDirectories(prev => prev.map(dir =>
-                        dir.directory_path === d.directory_path ? { ...dir, starred: res.starred } : dir
+                        dir.directory_path === d.directory_path ? { ...dir, starred: res.starred } : dir,
                       ))
                     } catch {
-                      // 星标切换失败时保持当前显示状态。
+                      // Preserve current UI state if the toggle call fails.
                     }
                   }}
                   title={d.starred ? '取消星标' : '设为默认'}
@@ -707,7 +722,6 @@ export function SearchPage() {
         </div>
       )}
 
-      {/* Tag 输入框 */}
       <div style={{ display: 'flex', gap: 12, marginBottom: 10 }}>
         <div
           style={{
@@ -742,9 +756,14 @@ export function SearchPage() {
             >
               {t}
               <span
-                onClick={e => { e.stopPropagation(); removeTag(i) }}
+                onClick={e => {
+                  e.stopPropagation()
+                  removeTag(i)
+                }}
                 style={{ cursor: 'pointer', color: '#888', fontWeight: 700, lineHeight: 1 }}
-              >×</span>
+              >
+                ×
+              </span>
             </span>
           ))}
           <input
@@ -783,7 +802,6 @@ export function SearchPage() {
 
       {count && <div style={{ fontSize: 13, color: '#888', marginBottom: 8 }}>{count}</div>}
 
-      {/* AG Grid */}
       <div style={{ width: '100%', height: 600 }}>
         <AgGridReact
           ref={gridRef}

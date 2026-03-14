@@ -1,4 +1,4 @@
-const BASE = '/api'
+const BASE = process.env.NEXT_PUBLIC_API_BASE ?? '/api'
 
 export interface SearchResult {
   doc_id: string

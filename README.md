@@ -1,11 +1,10 @@
 # MieMie Helper
 
-工作与生活辅助工具集合项目。前后端分离架构，本地离线运行。
+工作与生活辅助工具集合项目。FastAPI 后端 + Next.js 前端，本地离线运行。
 
 ## 功能特性
 
 - **文档全文搜索** — jieba 中文分词 + SQLite FTS5 全文检索
-- **向量语义搜索** — BAAI/bge-small-zh-v1.5 编码 + ChromaDB 余弦相似度
 - **增量索引** — mtime+size 预过滤 → MD5 确认，只处理变更文件
 - **公文归档导出** — 自动提取发文字号、标题、日期等字段，导出 Excel
 - **多格式支持** — PDF / Word / WPS / OFD / 图片 OCR
@@ -71,7 +70,7 @@ uv --version
 
 > 如果只处理 `.pdf` / `.docx` / `.ofd` / 图片，可以跳过此步。
 
-### 4. 安装 Node.js（构建前端需要）
+### 4. 安装 Node.js（构建 Next.js 前端需要）
 
 从 [Node.js 官网](https://nodejs.org/) 下载 **LTS** 版本安装。
 
@@ -125,7 +124,7 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 # 2. 安装 LibreOffice（可选，处理 .doc/.wps 需要）
 brew install --cask libreoffice
 
-# 3. 安装 Node.js（构建前端需要）
+# 3. 安装 Node.js（构建 Next.js 前端需要）
 brew install node
 
 # 4. 安装依赖
@@ -143,14 +142,14 @@ uv run python main.py
 ## 运行
 
 ```bash
-# Web 应用（FastAPI + React，端口 4001）
+# Web 应用（FastAPI + Next.js static export，端口 4001）
 uv run python main.py
 
 # 热加载开发模式（后端）
 uv run uvicorn main:app --host 0.0.0.0 --port 4001 --reload
 
-# 前端开发模式（自动代理 /api 到后端）
-cd frontend && npm run dev
+# 前端开发模式（需显式指向 FastAPI 后端）
+cd frontend && NEXT_PUBLIC_API_BASE=http://localhost:4001/api npm run dev
 
 # CLI 直接处理
 uv run python -m src.doc_archive.main <公文目录> [-o 输出.xlsx]
@@ -161,7 +160,7 @@ uv run python -m src.doc_archive.main <公文目录> [-o 输出.xlsx]
 本项目设计为本地离线运行。在无网络的部署机器上：
 
 1. **Python 依赖**：在联网机器上 `uv sync` 后，将整个项目目录（含 `.venv/`）拷贝到目标机器
-2. **前端资源**：在联网机器上 `npm run build` 后，`static/` 目录已包含所有前端文件
+2. **前端资源**：在联网机器上 `npm run build` 后，`frontend/out/` 目录已包含前端静态导出文件
 3. **Embedding 模型**：首次启动时会下载到 `.miemie_helper/doc_search/models/`。可在联网机器上先运行一次，再将该目录拷贝到目标机器相同路径
 
 ## 环境变量
@@ -176,10 +175,12 @@ uv run python -m src.doc_archive.main <公文目录> [-o 输出.xlsx]
 ## 项目结构
 
 ```
-├── main.py                # 应用入口（FastAPI + 静态文件）
-├── frontend/              # React + Vite 前端源码
+├── main.py                # 应用入口（FastAPI + Next.js 静态导出）
+├── frontend/              # Next.js 前端源码
+│   ├── app/               # App Router 页面入口
+│   ├── src/               # 组件、视图、API 客户端
+│   ├── out/               # Next.js 静态导出产物（git-ignored）
 │   └── package.json
-├── static/                # 前端构建产物（git-ignored）
 ├── src/
 │   ├── config.py          # 集中配置
 │   ├── core/              # 共享核心逻辑

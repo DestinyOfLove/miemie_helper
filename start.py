@@ -10,6 +10,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).parent
 URL = "http://localhost:4001"
+FRONTEND_EXPORT_INDEX = ROOT / "frontend" / "out" / "index.html"
 
 
 def open_browser() -> None:
@@ -28,7 +29,7 @@ def sync_python_env() -> None:
 
 
 def ensure_frontend_build() -> None:
-    if (ROOT / "static" / "index.html").exists():
+    if FRONTEND_EXPORT_INDEX.exists():
         return
 
     print("Frontend not built -- building ...")
