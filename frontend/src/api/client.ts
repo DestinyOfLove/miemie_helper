@@ -15,10 +15,6 @@ export interface SearchResult {
   extracted_text: string
 }
 
-export interface SearchResponse {
-  fulltext_results: SearchResult[]
-}
-
 export interface DirectoryInfo {
   directory_path: string
   file_count: number
@@ -78,11 +74,11 @@ export interface ArchiveStatus {
 }
 
 export const api = {
-  search: async (query: string, scopes: string[] = ['content'], directories: string[] = []): Promise<SearchResponse> => {
+  search: async (query: string, scopes: string[] = ['content'], directories: string[] = []): Promise<SearchResult[]> => {
     const res = await fetch(`${BASE}/search/`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ query, max_results: 0, scopes, directories }),
+      body: JSON.stringify({ query, scopes, directories }),
     })
     if (!res.ok) throw new Error(await res.text())
     return res.json()

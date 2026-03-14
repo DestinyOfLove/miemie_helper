@@ -398,7 +398,7 @@ export function SearchPage() {
       if (seq !== searchSeqRef.current) return
 
       // 只使用全文检索结果（双引号精确匹配）
-      const data = res.fulltext_results.map((r, i) => {
+      const data = res.map((r, i) => {
         const folder = r.file_path.replace(/[/\\][^/\\]+$/, '')
         const text = r.extracted_text || r.snippet || ''
         return {

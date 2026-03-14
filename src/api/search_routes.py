@@ -19,6 +19,11 @@ def _run_in_executor(func, *args):
     return loop.run_in_executor(_executor, func, *args)
 
 
+def _cleanup_executor() -> None:
+    """应用关闭时释放线程池。"""
+    _executor.shutdown(wait=False, cancel_futures=True)
+
+
 @router.post("/", response_model=list[SearchResult])
 async def search(request: SearchRequest) -> list[SearchResult]:
     """全文检索（双引号精确匹配）。"""

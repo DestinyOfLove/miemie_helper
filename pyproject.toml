@@ -5,6 +5,7 @@ description = "文档归档和搜索系统，支持全文检索"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
+    "defusedxml>=0.7.1",
     "filelock>=3.12",
     "jieba>=0.42.1",
     "fastapi>=0.115.0",
