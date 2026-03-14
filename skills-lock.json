@@ -61,6 +61,11 @@
       "sourceType": "github",
       "computedHash": "69cecc4f28fb2f140652669bd45cc492744ad5c3c45083f5e0be5b0a5ef8acd0"
     },
+    "nextjs-react-typescript": {
+      "source": "mindrally/skills",
+      "sourceType": "github",
+      "computedHash": "eb995cc826bf48498e0e90969fc7dadfa2ec634002c26cfcfde565134cefa738"
+    },
     "normalize": {
       "source": "pbakaus/impeccable",
       "sourceType": "github",
@@ -80,6 +85,11 @@
       "source": "pbakaus/impeccable",
       "sourceType": "github",
       "computedHash": "72c2426ac9540884eb5032bb438324bb344d0e2dd2b80f300a9fb49fe38d624e"
+    },
+    "python-performance-optimization": {
+      "source": "wshobson/agents",
+      "sourceType": "github",
+      "computedHash": "2a11c79dcd94b5424261b44247ab03a8365cbe62f05f9b52500211db8fda98f9"
     },
     "quieter": {
       "source": "pbakaus/impeccable",
