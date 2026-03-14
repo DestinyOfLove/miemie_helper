@@ -16,10 +16,10 @@
 
 - `frontend/app/`
   - Next.js App Router 入口。
-  - `page.tsx`、`search/page.tsx`、`archive/page.tsx` 定义页面路由。
+  - `page.tsx` 与 `search/page.tsx` 定义当前主产品路由。
 - `frontend/src/views/`
   - 主要页面视图组件。
-  - `HomePage.tsx` 是首页，`SearchPage.tsx` 是主要搜索界面，`ArchivePage.tsx` 是归档导出界面。
+  - `HomePage.tsx` 是首页，`SearchPage.tsx` 是主要搜索界面。
 - `frontend/src/api/client.ts`
   - 前端对 `/api/*` 的 fetch 封装。
 - `frontend/src/components/`

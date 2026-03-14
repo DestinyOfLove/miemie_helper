@@ -122,7 +122,6 @@
 - Next.js 导出产物可被 FastAPI 正常提供
 - `/`
 - `/search`
-- `/archive`
 - `/api/*` 调用正常
 
 ## Recommendation

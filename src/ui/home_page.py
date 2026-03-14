@@ -20,22 +20,12 @@ def home_page():
                     ui.icon("search", size="2rem").classes("text-blue-8 q-mb-sm")
                     ui.label("文档搜索").classes("text-h6")
                     ui.label(
-                        "在公文文件中搜索关键词或语义内容。"
-                        "支持全文精确匹配和向量语义检索，双栏对比结果。"
+                        "在公文文件中搜索关键词。"
+                        "支持全文精确匹配，并可按字段范围检索。"
                     ).classes("text-body2 text-grey-8")
                     ui.label("PDF / DOCX / JPG / PNG / TIFF / BMP").classes(
                         "text-caption text-grey q-mt-sm"
                     )
-
-            # 归档导出
-            with ui.card().classes("cursor-pointer flex-1").on("click", lambda: ui.navigate.to("/archive")):
-                with ui.card_section():
-                    ui.icon("table_chart", size="2rem").classes("text-green-8 q-mb-sm")
-                    ui.label("归档导出").classes("text-h6")
-                    ui.label(
-                        "批量提取公文元数据（发文字号、标题、日期等），"
-                        "导出为结构化 Excel 表格。支持增量处理。"
-                    ).classes("text-body2 text-grey-8")
 
             # 更多工具
             with ui.card().classes("flex-1 opacity-50"):

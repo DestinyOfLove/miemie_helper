@@ -6,7 +6,6 @@
 
 - **文档全文搜索** — jieba 中文分词 + SQLite FTS5 全文检索
 - **增量索引** — mtime+size 预过滤 → MD5 确认，只处理变更文件
-- **公文归档导出** — 自动提取发文字号、标题、日期等字段，导出 Excel
 - **多格式支持** — PDF / Word / WPS / OFD / 图片 OCR
 
 ## 支持的文件格式
@@ -151,8 +150,6 @@ uv run uvicorn main:app --host 0.0.0.0 --port 4001 --reload
 # 前端开发模式（需显式指向 FastAPI 后端）
 cd frontend && NEXT_PUBLIC_API_BASE=http://localhost:4001/api npm run dev
 
-# CLI 直接处理
-uv run python -m src.doc_archive.main <公文目录> [-o 输出.xlsx]
 ```
 
 ## 离线部署
@@ -194,18 +191,13 @@ uv run python -m src.doc_archive.main <公文目录> [-o 输出.xlsx]
 │   │   ├── document_db.py # SQLite 文档元数据 + 目录管理
 │   │   ├── fulltext_store.py # FTS5 全文检索
 │   │   ├── embedding.py   # 向量编码
-│   │   ├── vector_store.py# ChromaDB 向量存储
 │   │   └── indexer.py     # 增量索引编排
 │   ├── api/               # FastAPI REST 路由
 │   │   ├── index_routes.py
 │   │   ├── search_routes.py
-│   │   ├── export_routes.py
-│   │   └── archive_routes.py
 │   ├── ui/                # NiceGUI 页面（保留兼容）
-│   └── doc_archive/       # CLI 入口（保留兼容）
 └── .miemie_helper/        # 运行时数据（git-ignored）
     └── doc_search/
         ├── db/            # SQLite 数据库
-        ├── vector/chroma/ # ChromaDB 向量持久化
         └── models/        # Embedding 模型缓存
 ```

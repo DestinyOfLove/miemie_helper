@@ -35,11 +35,9 @@
 
 ### In Scope
 
-- `frontend/index.html`
-- `frontend/src/index.css`
-- `frontend/src/App.tsx`
+- `frontend/app/*`
 - `frontend/src/components/*`
-- `frontend/src/pages/*`
+- `frontend/src/views/*`
 
 ### Out Of Scope
 
@@ -122,7 +120,6 @@
 
 - `NavBar`
 - `HomePage`
-- `ArchivePage`
 - `SearchPage`
 
 ### 强依赖、不能并行乱改的区域
@@ -197,10 +194,6 @@
   - 入口布局 modern 化
   - 桌面窄窗口重排
   - 接入 MUI / shell / theme
-- `ArchivePage`
-  - 表单与按钮接入库组件
-  - 进度区、日志区、下载动作重构
-  - 桌面窄窗口布局
 
 对应技能：
 
@@ -278,13 +271,13 @@ cd frontend && npm run build
 任务：
 
 - 选定并接入 `MUI`
-- `frontend/index.html`
+- `frontend/app/layout.tsx`
   - `lang="zh-CN"`
   - title / metadata 校正
-- `frontend/src/index.css`
+- `frontend/app/globals.css`
   - 保留全局 reset
   - 接入主题基础与少量全局样式
-- `frontend/src/App.tsx`
+- `frontend/app/layout.tsx`
   - provider
   - app shell
   - theme 容器
@@ -299,7 +292,7 @@ cd frontend && npm run build
 
 并行性：
 
-- 可把 `MUI + App.tsx + index.css` 与 `NavBar.tsx` 分给不同 worker，但需先约定主题结构
+- 可把 `MUI + layout.tsx + globals.css` 与 `NavBar.tsx` 分给不同 worker，但需先约定主题结构
 
 验证：
 
@@ -344,18 +337,12 @@ cd frontend && npm run build
 
 目标：先拿简单页面验证新基础是否有效。
 
-任务 A：
+任务：
 
 - `HomePage.tsx`
   - 入口布局 modern 化
   - 接入 MUI / shell / theme
   - 桌面窄窗口重排
-
-任务 B：
-
-- `ArchivePage.tsx`
-  - 表单、进度、日志、下载动作接入 MUI / shell / theme
-  - 桌面窄窗口布局
 
 依赖关系：
 
@@ -363,10 +350,7 @@ cd frontend && npm run build
 
 并行性：
 
-- 可并行
-- 写集分离：
-  - Worker 1 负责 `HomePage.tsx`
-  - Worker 2 负责 `ArchivePage.tsx`
+- 可与文档和兼容层清理并行
 
 验证：
 
@@ -378,7 +362,6 @@ cd frontend && npm run build
 手工：
 
 - 首页入口工作正常
-- 归档页输入、开始处理、下载保持可用
 
 ### Phase 4: Search Page Main Batch
 
@@ -479,11 +462,10 @@ cd frontend && npm run build
 ### 可并行批次
 
 - Phase 1 内：
-  - Worker A：`MUI` 接入 + `index.css` + `App.tsx`
+  - Worker A：`MUI` 接入 + `layout.tsx` + `globals.css`
   - Worker B：`NavBar.tsx`
 - Phase 3 内：
   - Worker A：`HomePage.tsx`
-  - Worker B：`ArchivePage.tsx`
 
 ### 不可并行批次
 
@@ -498,7 +480,7 @@ cd frontend && npm run build
 - Worker 1
   - 负责 library foundation / shell
 - Worker 2
-  - 负责轻量页面
+  - 负责首页与文档同步
 - Worker 3
   - 在后期进入 performance / polish sweep
 
@@ -528,13 +510,11 @@ cd frontend && npm run build
   - 入口卡片可点击
 - 搜索页
   - 搜索、筛选、目录、星标、索引、结果渲染都可用
-- 归档页
-  - 输入目录、启动、进度、下载保持可用
 
 ## Exit Criteria
 
 - 建立基于 UI 库的 light / dark 主题系统
-- 首页、导航、归档页、搜索页都接入共享层和库组件
+- 首页、导航、搜索页都接入共享层和库组件
 - 搜索页不再维持“大而全单文件”状态
 - 桌面窄窗口下不出现主要流程阻断
 - 构建继续通过，且性能警报至少有明确处理结论

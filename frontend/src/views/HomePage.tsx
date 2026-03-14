@@ -1,79 +1,112 @@
 'use client'
 
 import Link from 'next/link'
+import SearchRoundedIcon from '@mui/icons-material/SearchRounded'
+import AutoAwesomeRoundedIcon from '@mui/icons-material/AutoAwesomeRounded'
+import ArrowForwardRoundedIcon from '@mui/icons-material/ArrowForwardRounded'
+import { Box, Button, Card, CardContent, Chip, Grid, Stack, Typography } from '@mui/material'
+import { alpha } from '@mui/material/styles'
+import { PageContainer } from '../components/layout/PageContainer'
 
 const tools = [
   {
-    icon: '🔍',
+    icon: <SearchRoundedIcon />,
     title: '文档搜索',
-    desc: '在公文文件中搜索关键词。支持全文精确匹配，并可按字段范围检索。',
-    sub: 'PDF / DOCX / JPG / PNG / TIFF / BMP',
+    desc: '在本地公文资料中快速检索关键词，按正文、标题或全文范围定位信息。',
+    sub: '正文 / 标题 / 全文',
     to: '/search',
   },
   {
-    icon: '📊',
-    title: '归档导出',
-    desc: '批量提取公文元数据（发文字号、标题、日期等），导出为结构化 Excel 表格。',
-    sub: '',
-    to: '/archive',
-  },
-  {
-    icon: '⋯',
+    icon: <AutoAwesomeRoundedIcon />,
     title: '更多工具',
-    desc: '即将推出...',
-    sub: '',
+    desc: '当前版本聚焦文档搜索。后续能力会在稳定的桌面工作流基础上逐步扩展。',
+    sub: '规划中',
     to: null,
   },
 ]
 
 export function HomePage() {
   return (
-    <div style={{ maxWidth: 900, margin: '0 auto', padding: '40px 24px' }}>
-      <h1 style={{ fontSize: 28, marginBottom: 8 }}>工具集</h1>
-      <p style={{ color: '#666', marginBottom: 32 }}>所有数据本地处理，不上传任何内容</p>
+    <PageContainer
+      maxWidth="lg"
+      title="工具集"
+      description="当前工作区聚焦文档搜索。所有内容本地处理，不上传任何文件。"
+    >
+      <Box
+        sx={{
+          p: { xs: 3, md: 4 },
+          borderRadius: '32px',
+          background: theme => `linear-gradient(135deg, ${alpha(theme.palette.primary.main, 0.14)}, ${alpha(theme.palette.secondary.main, 0.08)})`,
+          border: '1px solid',
+          borderColor: 'divider',
+          maxWidth: 980,
+        }}
+      >
+        <Stack spacing={2.5}>
+          <Chip label="桌面工作流" color="primary" sx={{ alignSelf: 'flex-start' }} />
+          <Typography variant="h2" sx={{ maxWidth: 680 }}>
+            为高频文档检索提供更快、更清晰的桌面操作入口。
+          </Typography>
+          <Typography color="text.secondary" sx={{ maxWidth: 720 }}>
+            现在先把搜索体验打磨到稳定、现代、易用。后续能力会在这个基础上再扩展，而不是继续堆叠旧式后台入口。
+          </Typography>
+          <Box>
+            <Button
+              component={Link}
+              href="/search"
+              variant="contained"
+              endIcon={<ArrowForwardRoundedIcon />}
+              size="large"
+            >
+              进入文档搜索
+            </Button>
+          </Box>
+        </Stack>
+      </Box>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 20 }}>
-        {tools.map((t) => (
-          t.to ? (
-            <Link
-              key={t.title}
-              href={t.to}
-              style={{
-                border: '1px solid #e0e0e0',
-                borderRadius: 8,
-                padding: 24,
-                cursor: 'pointer',
-                transition: 'box-shadow 0.15s',
-                color: 'inherit',
-                textDecoration: 'none',
-                display: 'block',
-              }}
-              onMouseEnter={(e) => ((e.currentTarget as HTMLAnchorElement).style.boxShadow = '0 2px 12px rgba(0,0,0,0.12)')}
-              onMouseLeave={(e) => ((e.currentTarget as HTMLAnchorElement).style.boxShadow = 'none')}
-            >
-              <div style={{ fontSize: 32, marginBottom: 12 }}>{t.icon}</div>
-              <div style={{ fontWeight: 600, fontSize: 17, marginBottom: 8 }}>{t.title}</div>
-              <div style={{ color: '#555', fontSize: 14, lineHeight: 1.6 }}>{t.desc}</div>
-              {t.sub && <div style={{ color: '#999', fontSize: 12, marginTop: 10 }}>{t.sub}</div>}
-            </Link>
-          ) : (
-            <div
-              key={t.title}
-              style={{
-                border: '1px solid #e0e0e0',
-                borderRadius: 8,
-                padding: 24,
-                opacity: 0.5,
+      <Grid container spacing={3}>
+        {tools.map((tool) => (
+          <Grid key={tool.title} size={{ xs: 12, md: 6 }}>
+            <Card
+              variant="outlined"
+              sx={{
+                height: '100%',
+                opacity: tool.to ? 1 : 0.72,
               }}
             >
-              <div style={{ fontSize: 32, marginBottom: 12 }}>{t.icon}</div>
-              <div style={{ fontWeight: 600, fontSize: 17, marginBottom: 8 }}>{t.title}</div>
-              <div style={{ color: '#555', fontSize: 14, lineHeight: 1.6 }}>{t.desc}</div>
-              {t.sub && <div style={{ color: '#999', fontSize: 12, marginTop: 10 }}>{t.sub}</div>}
-            </div>
-          )
+              <CardContent sx={{ p: 3.5 }}>
+                <Stack spacing={2}>
+                  <Box
+                    sx={{
+                      width: 48,
+                      height: 48,
+                      borderRadius: '18px',
+                      display: 'grid',
+                      placeItems: 'center',
+                      bgcolor: 'action.hover',
+                      color: 'primary.main',
+                    }}
+                  >
+                    {tool.icon}
+                  </Box>
+                  <Stack spacing={1}>
+                    <Typography variant="h6">{tool.title}</Typography>
+                    <Typography color="text.secondary">{tool.desc}</Typography>
+                  </Stack>
+                  {tool.sub && (
+                    <Chip label={tool.sub} variant="outlined" sx={{ alignSelf: 'flex-start' }} />
+                  )}
+                  {tool.to && (
+                    <Button component={Link} href={tool.to} variant="text" sx={{ alignSelf: 'flex-start', px: 0 }}>
+                      打开
+                    </Button>
+                  )}
+                </Stack>
+              </CardContent>
+            </Card>
+          </Grid>
         ))}
-      </div>
-    </div>
+      </Grid>
+    </PageContainer>
   )
 }

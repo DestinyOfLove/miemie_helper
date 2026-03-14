@@ -62,17 +62,6 @@ export interface IndexStatus {
   warnings: string[]
 }
 
-export interface ArchiveStatus {
-  is_running: boolean
-  phase: string
-  directory: string
-  total_files: number
-  processed_files: number
-  errors: string[]
-  output_path: string
-  log_lines: string[]
-}
-
 export const api = {
   search: async (query: string, scopes: string[] = ['content'], directories: string[] = []): Promise<SearchResult[]> => {
     const res = await fetch(`${BASE}/search/`, {
@@ -135,31 +124,5 @@ export const api = {
       body: JSON.stringify({ directory }),
     })
     if (!res.ok) throw new Error(await res.text())
-  },
-
-  archiveStart: async (directory: string): Promise<void> => {
-    const res = await fetch(`${BASE}/archive/start`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ directory }),
-    })
-    if (!res.ok) throw new Error(await res.text())
-  },
-
-  archiveStatus: async (): Promise<ArchiveStatus> => {
-    const res = await fetch(`${BASE}/archive/status`)
-    if (!res.ok) throw new Error(await res.text())
-    return res.json()
-  },
-
-  archiveDownload: () => {
-    window.open(`${BASE}/archive/download`, '_blank')
-  },
-
-  exportExcel: (directory?: string) => {
-    const url = directory
-      ? `${BASE}/export/excel?directory=${encodeURIComponent(directory)}`
-      : `${BASE}/export/excel`
-    window.open(url, '_blank')
   },
 }

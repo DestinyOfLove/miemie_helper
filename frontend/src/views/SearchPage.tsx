@@ -1,11 +1,30 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { KeyboardEvent, ReactNode } from 'react'
+import type { CSSProperties, KeyboardEvent, ReactNode } from 'react'
+import ExpandMoreRoundedIcon from '@mui/icons-material/ExpandMoreRounded'
+import SearchRoundedIcon from '@mui/icons-material/SearchRounded'
 import { AgGridReact } from 'ag-grid-react'
 import type { ColDef } from 'ag-grid-community'
 import { AllCommunityModule, ModuleRegistry } from 'ag-grid-community'
+import {
+  Accordion,
+  AccordionDetails,
+  AccordionSummary,
+  Alert,
+  Box,
+  Button,
+  Chip,
+  Stack,
+  TextField,
+  Tooltip as MuiTooltip,
+  Typography,
+  useTheme,
+} from '@mui/material'
+import { alpha } from '@mui/material/styles'
 import { api, type DirectoryInfo, type DirectoryScanResult, type IndexStatus } from '../api/client'
+import { PageContainer } from '../components/layout/PageContainer'
+import { SectionPanel } from '../components/layout/SectionPanel'
 
 ModuleRegistry.registerModules([AllCommunityModule])
 
@@ -79,10 +98,9 @@ function escapeHtml(s: string) {
 
 function Tip({ text, children }: { text: string; children: ReactNode }) {
   return (
-    <span className="tip-wrap" style={{ position: 'relative', display: 'inline-flex' }}>
-      {children}
-      <span className="tip-bubble">{text}</span>
-    </span>
+    <MuiTooltip title={text} arrow>
+      <span style={{ display: 'inline-flex' }}>{children}</span>
+    </MuiTooltip>
   )
 }
 
@@ -215,6 +233,7 @@ const colDefs: ColDef<RowData>[] = [
 ]
 
 export function SearchPage() {
+  const theme = useTheme()
   const [tags, setTags] = useState<string[]>([])
   const [inputVal, setInputVal] = useState('')
   const [scopes, setScopes] = useState<SearchScope[]>(['content'])
@@ -411,37 +430,72 @@ export function SearchPage() {
     gridRef.current?.api.sizeColumnsToFit()
   }, [])
 
-  return (
-    <div style={{ maxWidth: 1400, margin: '0 auto', padding: '24px' }}>
-      <h1 style={{ fontSize: 26, marginBottom: 20 }}>文档搜索</h1>
+  const gridThemeClass = theme.palette.mode === 'dark' ? 'ag-theme-quartz-dark' : 'ag-theme-quartz'
+  const softPanelBg = alpha(
+    theme.palette.background.paper,
+    theme.palette.mode === 'light' ? 0.82 : 0.94,
+  )
+  const subtleFill = alpha(
+    theme.palette.primary.main,
+    theme.palette.mode === 'light' ? 0.06 : 0.14,
+  )
 
-      <div style={{ border: '1px solid #e0e0e0', borderRadius: 8, marginBottom: 20 }}>
-        <div
-          onClick={() => setIndexExpanded(!indexExpanded)}
-          style={{ padding: '12px 16px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8, userSelect: 'none', fontWeight: 500 }}
+  return (
+    <PageContainer
+      maxWidth="xl"
+      title="文档搜索"
+      description="以桌面工作流为中心组织索引、筛选和结果浏览。所有查询都直接命中本地数据，不上传任何内容。"
+    >
+      <Accordion
+        expanded={indexExpanded}
+        onChange={(_, expanded) => setIndexExpanded(expanded)}
+        disableGutters
+        sx={{
+          borderRadius: '28px',
+          overflow: 'hidden',
+          border: '1px solid',
+          borderColor: 'divider',
+          bgcolor: 'background.paper',
+          boxShadow: 'none',
+          '&::before': { display: 'none' },
+        }}
+      >
+        <AccordionSummary
+          expandIcon={<ExpandMoreRoundedIcon />}
+          sx={{
+            px: 3,
+            minHeight: 64,
+            '& .MuiAccordionSummary-content': {
+              alignItems: 'center',
+              gap: 1,
+            },
+          }}
         >
-          ⚙ 索引管理 <span style={{ marginLeft: 'auto' }}>{indexExpanded ? '▲' : '▼'}</span>
-        </div>
-        {indexExpanded && (
-          <div style={{ padding: '0 16px 16px', borderTop: '1px solid #f0f0f0' }}>
-            <div style={{ display: 'flex', gap: 12, marginTop: 12 }}>
-              <input
+          <Typography variant="h6">索引管理</Typography>
+          <Chip label="本地目录" size="small" color="primary" variant="outlined" />
+        </AccordionSummary>
+        <AccordionDetails sx={{ px: 3, pb: 3 }}>
+            <Box sx={{ display: 'flex', gap: 1.5, mt: 1, flexDirection: { xs: 'column', md: 'row' } }}>
+              <TextField
+                fullWidth
+                size="small"
+                label="索引目录"
                 value={dirInput}
                 onChange={e => setDirInput(e.target.value)}
                 placeholder="/path/to/documents"
-                style={{ flex: 1, padding: '8px 12px', border: '1px solid #ccc', borderRadius: 6, fontSize: 14 }}
               />
-              <button
+              <Button
                 onClick={startIndexing}
                 disabled={indexing}
-                style={{ padding: '8px 18px', background: '#1976D2', color: '#fff', border: 'none', borderRadius: 6, cursor: indexing ? 'not-allowed' : 'pointer', opacity: indexing ? 0.6 : 1 }}
+                variant="contained"
+                sx={{ minWidth: 132 }}
               >
                 {indexing ? '索引中...' : '开始索引'}
-              </button>
-            </div>
+              </Button>
+            </Box>
             {indexStatus && (
-              <div style={{ marginTop: 10 }}>
-                <div style={{ padding: '10px 12px', background: '#f5f5f5', borderRadius: 6, fontSize: 13, color: '#555' }}>
+              <Box sx={{ mt: 1.5 }}>
+                <div style={{ padding: '10px 12px', background: softPanelBg, borderRadius: 18, fontSize: 13, color: theme.palette.text.secondary }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: indexStatus.is_running && indexStatus.total_files > 0 ? 8 : 0 }}>
                     <span
                       style={{
@@ -506,23 +560,33 @@ export function SearchPage() {
                   )}
                 </div>
                 {indexStatus.warnings?.length > 0 && (
-                  <div style={{ marginTop: 6, padding: '6px 12px', background: '#FFF8E1', border: '1px solid #FFE082', borderRadius: 6, fontSize: 12, color: '#F57F17' }}>
-                    {indexStatus.warnings.map((w, i) => <div key={i} style={{ whiteSpace: 'pre-wrap' }}>{w}</div>)}
-                  </div>
+                  <Stack spacing={1} sx={{ mt: 1 }}>
+                    {indexStatus.warnings.map((w, i) => (
+                      <Alert key={i} severity="warning" variant="outlined">
+                        {w}
+                      </Alert>
+                    ))}
+                  </Stack>
                 )}
                 {indexStatus.errors?.length > 0 && (
-                  <div style={{ marginTop: 6, padding: '6px 12px', background: '#FFEBEE', border: '1px solid #EF9A9A', borderRadius: 6, fontSize: 12, color: '#C62828' }}>
-                    {indexStatus.errors.map((e, i) => <div key={i}>{e}</div>)}
-                  </div>
+                  <Stack spacing={1} sx={{ mt: 1 }}>
+                    {indexStatus.errors.map((e, i) => (
+                      <Alert key={i} severity="error" variant="outlined">
+                        {e}
+                      </Alert>
+                    ))}
+                  </Stack>
                 )}
-              </div>
+              </Box>
             )}
             {directories.length > 0 && (
-              <div style={{ marginTop: 16 }}>
-                <div style={{ fontWeight: 500, marginBottom: 8, fontSize: 14 }}>已索引目录</div>
+              <Box sx={{ mt: 2 }}>
+                <Typography variant="subtitle2" sx={{ mb: 1.25 }}>
+                  已索引目录
+                </Typography>
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
                   <thead>
-                    <tr style={{ background: '#f5f5f5' }}>
+                    <tr style={{ background: softPanelBg }}>
                       {['目录', '文件数', '已索引', '状态', '变更检测', '最后扫描', '操作'].map(h => (
                         <th key={h} style={{ padding: '6px 10px', textAlign: 'left', borderBottom: '1px solid #e0e0e0', fontWeight: 500 }}>{h}</th>
                       ))}
@@ -622,44 +686,35 @@ export function SearchPage() {
                     })}
                   </tbody>
                 </table>
-              </div>
+              </Box>
             )}
-          </div>
-        )}
-      </div>
+        </AccordionDetails>
+      </Accordion>
 
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
-        <Tip text="选择要搜索的字段范围，可多选">
-          <span style={{ fontSize: 13, color: '#666', cursor: 'help', borderBottom: '1px dashed #aaa' }}>搜索范围：</span>
-        </Tip>
+      <SectionPanel sx={{ p: 2.5 }}>
+      <Stack spacing={2}>
+      <Box style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+        <Typography variant="body2" color="text.secondary">搜索范围</Typography>
         {SCOPE_OPTIONS.map(({ value, label, tip }) => {
           const active = scopes.includes(value)
           return (
             <Tip key={value} text={tip}>
-              <button
+              <Chip
+                clickable
+                color={active ? 'primary' : 'default'}
+                variant={active ? 'filled' : 'outlined'}
+                label={label}
                 onClick={() => toggleScope(value)}
-                style={{
-                  padding: '4px 14px',
-                  borderRadius: 20,
-                  border: `1px solid ${active ? '#1976D2' : '#ccc'}`,
-                  background: active ? '#E3F2FD' : '#fff',
-                  color: active ? '#1565C0' : '#555',
-                  cursor: 'pointer',
-                  fontSize: 13,
-                  fontWeight: active ? 600 : 400,
-                }}
-              >
-                {label}
-              </button>
+              />
             </Tip>
           )
         })}
-      </div>
+      </Box>
 
       {directories.length > 1 && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10, flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
           <Tip text="选择要搜索的目录范围，可多选。星标目录在页面加载时自动选中">
-            <span style={{ fontSize: 13, color: '#666', cursor: 'help', borderBottom: '1px dashed #aaa' }}>搜索目录：</span>
+            <Typography variant="body2" color="text.secondary">搜索目录</Typography>
           </Tip>
           {directories.map(d => {
             const dirName = d.directory_path.replace(/\\/g, '/').split('/').filter(Boolean).pop() || d.directory_path
@@ -731,9 +786,9 @@ export function SearchPage() {
             alignItems: 'center',
             gap: 6,
             padding: '6px 10px',
-            border: '1px solid #ccc',
-            borderRadius: 6,
-            background: '#fff',
+            border: `1px solid ${theme.palette.divider}`,
+            borderRadius: 18,
+            background: softPanelBg,
             minHeight: 44,
             cursor: 'text',
           }}
@@ -782,27 +837,43 @@ export function SearchPage() {
             }}
           />
         </div>
-        <button
+        <Button
           onClick={doSearch}
+          startIcon={<SearchRoundedIcon />}
           disabled={searching || (tags.length === 0 && !inputVal.trim())}
-          style={{
-            padding: '10px 28px',
-            background: '#1976D2',
-            color: '#fff',
-            border: 'none',
-            borderRadius: 6,
-            cursor: searching ? 'not-allowed' : 'pointer',
-            fontSize: 15,
-            opacity: searching ? 0.6 : 1,
-          }}
+          variant="contained"
+          sx={{ minWidth: 132 }}
         >
           搜索
-        </button>
+        </Button>
       </div>
 
-      {count && <div style={{ fontSize: 13, color: '#888', marginBottom: 8 }}>{count}</div>}
+      {count && <Typography variant="body2" color="text.secondary">{count}</Typography>}
+      </Stack>
+      </SectionPanel>
 
-      <div style={{ width: '100%', height: 600 }}>
+      <SectionPanel sx={{ p: 0, overflow: 'hidden' }}>
+      <Box
+        className={gridThemeClass}
+        sx={{
+          width: '100%',
+          height: 600,
+          '--ag-font-family': theme.typography.fontFamily,
+          '--ag-font-size': '13px',
+          '--ag-background-color': theme.palette.background.paper,
+          '--ag-foreground-color': theme.palette.text.primary,
+          '--ag-secondary-foreground-color': theme.palette.text.secondary,
+          '--ag-header-background-color': subtleFill,
+          '--ag-header-foreground-color': theme.palette.text.secondary,
+          '--ag-row-border-color': theme.palette.divider,
+          '--ag-border-color': theme.palette.divider,
+          '--ag-wrapper-border-radius': '28px',
+          '--ag-odd-row-background-color': alpha(theme.palette.primary.main, theme.palette.mode === 'light' ? 0.018 : 0.06),
+          '--ag-row-hover-color': alpha(theme.palette.primary.main, theme.palette.mode === 'light' ? 0.08 : 0.14),
+          '--ag-selected-row-background-color': alpha(theme.palette.primary.main, theme.palette.mode === 'light' ? 0.12 : 0.2),
+          '--ag-input-focus-border-color': theme.palette.primary.main,
+        } as CSSProperties}
+      >
         <AgGridReact
           ref={gridRef}
           rowData={rows}
@@ -813,27 +884,14 @@ export function SearchPage() {
           localeText={AG_GRID_LOCALE_ZH}
           onGridReady={onGridReady}
         />
-      </div>
+      </Box>
+      </SectionPanel>
 
       <style>{`
         mark { background: #FFF176; padding: 1px 2px; border-radius: 2px; }
-        .tip-wrap .tip-bubble {
-          visibility: hidden; opacity: 0;
-          position: absolute; bottom: calc(100% + 8px); left: 50%;
-          transform: translateX(-50%); padding: 6px 12px;
-          background: #333; color: #fff; font-size: 12px; line-height: 1.5;
-          border-radius: 6px; white-space: nowrap;
-          pointer-events: none; transition: opacity 0.15s; z-index: 100;
-        }
-        .tip-wrap .tip-bubble::after {
-          content: ''; position: absolute; top: 100%; left: 50%;
-          transform: translateX(-50%);
-          border: 5px solid transparent; border-top-color: #333;
-        }
-        .tip-wrap:hover .tip-bubble { visibility: visible; opacity: 1; }
         .copyable-cell { position: relative; }
         .copyable-cell:hover .copy-btn { opacity: 1 !important; }
       `}</style>
-    </div>
+    </PageContainer>
   )
 }

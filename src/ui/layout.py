@@ -9,4 +9,3 @@ def create_header() -> None:
         ui.label("MieMie Helper").classes("text-h6 q-mr-md")
         ui.link("首页", "/").classes("text-white text-subtitle1 q-mx-sm")
         ui.link("文档搜索", "/search").classes("text-white text-subtitle1 q-mx-sm")
-        ui.link("归档导出", "/archive").classes("text-white text-subtitle1 q-mx-sm")
