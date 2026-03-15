@@ -12,7 +12,8 @@ class DocumentRecord(BaseModel):
     file_mtime: float
     file_hash: str
     directory_root: str
-    extracted_text: str = ""
+    extracted_text: str = ""        # 原始提取文本，用于前端展示
+    indexed_text: str = ""          # 规范化后的索引用文本
     extraction_method: str = ""
     doc_number: str = ""            # 发文字号
     title: str = ""                 # 发文标题

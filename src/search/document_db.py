@@ -1,13 +1,16 @@
 """SQLite 文档数据库：元数据存储 + 索引目录管理。"""
 
+import logging
 import sqlite3
 from pathlib import Path
 
 from src.config import DB_PATH, ensure_dirs
 from src.search.models import DirectoryInfo, DocumentRecord
 
+logger = logging.getLogger(__name__)
 _conn: sqlite3.Connection | None = None
 _in_batch: bool = False
+SCHEMA_VERSION = 2
 
 
 def get_connection() -> sqlite3.Connection:
@@ -26,6 +29,16 @@ def get_connection() -> sqlite3.Connection:
 
 def _init_schema(conn: sqlite3.Connection) -> None:
     """初始化数据库表结构。"""
+    current_version = conn.execute("PRAGMA user_version").fetchone()[0]
+    if current_version != SCHEMA_VERSION:
+        if current_version != 0:
+            logger.warning(
+                "Resetting incompatible index schema from version %s to %s",
+                current_version,
+                SCHEMA_VERSION,
+            )
+        _reset_schema(conn)
+
     conn.executescript("""
         CREATE TABLE IF NOT EXISTS documents (
             id TEXT PRIMARY KEY,
@@ -36,6 +49,7 @@ def _init_schema(conn: sqlite3.Connection) -> None:
             file_hash TEXT NOT NULL,
             directory_root TEXT NOT NULL,
             extracted_text TEXT NOT NULL DEFAULT '',
+            indexed_text TEXT NOT NULL DEFAULT '',
             extraction_method TEXT NOT NULL DEFAULT '',
             doc_number TEXT NOT NULL DEFAULT '',
             title TEXT NOT NULL DEFAULT '',
@@ -77,24 +91,24 @@ def _init_schema(conn: sqlite3.Connection) -> None:
             SET status = 'incomplete'
             WHERE status IN ('scanning', 'indexing', 'rebuilding');
     """)
+    conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
     conn.commit()
-
-    # 增量迁移：添加可恢复索引所需的列
-    for col_name, col_type in [
-        ("processing_status", "TEXT NOT NULL DEFAULT 'indexed'"),
-        ("error_message", "TEXT NOT NULL DEFAULT ''"),
-        ("retry_count", "INTEGER NOT NULL DEFAULT 0"),
-    ]:
-        try:
-            conn.execute(f"ALTER TABLE documents ADD COLUMN {col_name} {col_type}")
-        except sqlite3.OperationalError:
-            pass  # 列已存在
 
     # 启动时将 extracting 状态的文档重置为 pending（上次崩溃残留）
     conn.execute(
         "UPDATE documents SET processing_status = 'pending' "
         "WHERE processing_status = 'extracting'"
     )
+    conn.commit()
+
+
+def _reset_schema(conn: sqlite3.Connection) -> None:
+    """直接重置不兼容的索引库。"""
+    conn.executescript("""
+        DROP TABLE IF EXISTS documents_fts;
+        DROP TABLE IF EXISTS documents;
+        DROP TABLE IF EXISTS indexed_directories;
+    """)
     conn.commit()
 
 
@@ -132,14 +146,15 @@ def upsert_document(doc: DocumentRecord) -> None:
     conn.execute(
         """INSERT OR REPLACE INTO documents
            (id, file_path, file_name, file_size, file_mtime, file_hash,
-            directory_root, extracted_text, extraction_method,
+            directory_root, extracted_text, indexed_text, extraction_method,
             doc_number, title, doc_date, issuing_authority, recipients,
             doc_type, classification, source_year,
             indexed_at, fts_indexed, processing_status)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
                    datetime('now'), ?, 'extracting')""",
         (doc.id, doc.file_path, doc.file_name, doc.file_size, doc.file_mtime,
          doc.file_hash, doc.directory_root, doc.extracted_text,
+         doc.indexed_text,
          doc.extraction_method, doc.doc_number, doc.title, doc.doc_date,
          doc.issuing_authority, doc.recipients, doc.doc_type,
          doc.classification, doc.source_year,
@@ -406,6 +421,7 @@ def _row_to_document(row: sqlite3.Row) -> DocumentRecord:
         file_hash=row["file_hash"],
         directory_root=row["directory_root"],
         extracted_text=row["extracted_text"],
+        indexed_text=row["indexed_text"],
         extraction_method=row["extraction_method"],
         doc_number=row["doc_number"],
         title=row["title"],

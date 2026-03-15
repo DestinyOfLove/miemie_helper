@@ -312,6 +312,7 @@ def run_indexing(directory: str) -> None:
                         file_hash=result["file_hash"],
                         directory_root=directory_str,
                         extracted_text="",
+                        indexed_text="",
                         extraction_method=result.get("method", ""),
                         source_year=result.get("year_hint", ""),
                     )
@@ -344,7 +345,8 @@ def run_indexing(directory: str) -> None:
                         file_mtime=result["file_mtime"],
                         file_hash=result["file_hash"],
                         directory_root=directory_str,
-                        extracted_text=normalized_text or "",
+                        extracted_text=result["text"] or "",
+                        indexed_text=normalized_text or "",
                         extraction_method=result["method"],
                         doc_number=fields["发文字号"],
                         title=fields["发文标题"],
@@ -363,7 +365,7 @@ def run_indexing(directory: str) -> None:
                     fts_records.append((
                         doc.id, doc.file_name, doc.title,
                         doc.doc_number, doc.issuing_authority,
-                        normalized_text or "",
+                        doc.indexed_text,
                     ))
 
                     # 标记 FTS 已索引
@@ -455,7 +457,11 @@ def scan_directory_changes(directory: str) -> DirectoryScanResult:
     # 重命名检测：新文件的 MD5 匹配到某个已删除文件的 MD5
     deleted_by_hash: dict[str, str] = {md5: path for path, md5 in deleted_files}
     # 已知哈希集合：用于识别内容重复文件（路径不同但内容相同，已被索引）
-    known_hashes: set[str] = {info["file_hash"] for info in known_files.values()}
+    known_hashes: set[str] = {
+        info["file_hash"]
+        for info in known_files.values()
+        if info["processing_status"] == "indexed"
+    }
     changes: list[FileChange] = []
     renamed_count = 0
     duplicate_count = 0
