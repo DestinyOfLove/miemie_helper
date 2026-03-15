@@ -20,6 +20,12 @@ dependencies = [
     "rapidocr-onnxruntime>=1.4.4",
 ]
 
+[dependency-groups]
+dev = [
+    "pytest>=9.0.2",
+    "pytest-timeout>=2.4.0",
+]
+
 [tool.uv]
 # fastembed==0.7.4 declares pillow<12.0, but it only uses pillow for image models,
 # not text embeddings. The constraint is overly conservative and conflicts with

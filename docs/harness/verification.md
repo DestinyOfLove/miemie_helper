@@ -5,14 +5,14 @@
 ## Baseline Setup
 
 ```bash
-uv sync
+uv sync --group dev
 cd frontend && npm install
 ```
 
 ## Common Commands
 
 ```bash
-uv run pytest tests/test_text_utils.py
+uv run python -m pytest tests/test_text_utils.py
 cd frontend && npm run lint
 cd frontend && npm run build
 uv run python main.py
@@ -40,7 +40,7 @@ cd frontend && npm run build
 至少运行：
 
 ```bash
-uv run pytest tests/test_text_utils.py
+uv run python -m pytest tests/test_text_utils.py
 ```
 
 如果改动不在 `text_utils` 覆盖范围内，还要补目标功能的手工验证，并说明为什么没有自动化测试。
@@ -50,7 +50,7 @@ uv run pytest tests/test_text_utils.py
 运行：
 
 ```bash
-uv run pytest tests/test_text_utils.py
+uv run python -m pytest tests/test_text_utils.py
 cd frontend && npm run lint
 cd frontend && npm run build
 uv run python main.py

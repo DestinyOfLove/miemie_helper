@@ -30,10 +30,10 @@ jobs:
         run: python -m pip install uv
 
       - name: Sync Python environment
-        run: uv sync
+        run: uv sync --group dev
 
       - name: Run backend tests
-        run: uv run pytest tests/test_text_utils.py
+        run: uv run python -m pytest tests/test_text_utils.py
 
       - name: Install frontend dependencies
         working-directory: frontend
