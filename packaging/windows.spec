@@ -4,7 +4,7 @@ from pathlib import Path
 
 from PyInstaller.utils.hooks import collect_all
 
-project_root = Path(SPECPATH).resolve().parent.parent
+project_root = Path(SPECPATH).resolve().parent
 
 datas = [
     (str(project_root / "frontend" / "out"), "frontend/out"),
