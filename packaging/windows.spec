@@ -28,7 +28,7 @@ for package_name in (
 
 
 a = Analysis(
-    ["launcher.py"],
+    [str(project_root / "launcher.py")],
     pathex=[str(project_root)],
     binaries=binaries,
     datas=datas,
