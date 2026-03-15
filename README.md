@@ -23,6 +23,16 @@
 
 ## Windows 安装部署
 
+### 0. 下载打包产物（推荐）
+
+如果只是给 Windows 用户使用，优先下载仓库 Actions 构建出的 Windows 发布包，而不是拉源码。
+
+- 触发方式：GitHub Actions 中手动运行 `Build Windows Package`
+- 交付物：下载 `MieMieHelper-windows.zip`
+- 运行方式：解压后双击 `MieMieHelper.exe`
+
+> 打包版不需要用户再安装 Node.js，也不需要再执行 `start.bat`。
+
 ### 1. 安装 Python 3.13+
 
 从 [Python 官网](https://www.python.org/downloads/) 下载安装包。

@@ -46,7 +46,10 @@ def _init_schema(conn: sqlite3.Connection) -> None:
             classification TEXT NOT NULL DEFAULT '',
             source_year TEXT NOT NULL DEFAULT '',
             indexed_at TEXT NOT NULL DEFAULT (datetime('now')),
-            fts_indexed INTEGER NOT NULL DEFAULT 0
+            fts_indexed INTEGER NOT NULL DEFAULT 0,
+            processing_status TEXT NOT NULL DEFAULT 'indexed',
+            error_message TEXT NOT NULL DEFAULT '',
+            retry_count INTEGER NOT NULL DEFAULT 0
         );
 
         CREATE INDEX IF NOT EXISTS idx_documents_file_path
@@ -181,6 +184,7 @@ def get_known_files(directory_root: str) -> dict[str, dict]:
     conn = get_connection()
     rows = conn.execute(
         "SELECT id, file_path, file_mtime, file_size, file_hash "
+        ", processing_status, error_message "
         "FROM documents WHERE directory_root = ?",
         (directory_root,),
     ).fetchall()
@@ -190,6 +194,8 @@ def get_known_files(directory_root: str) -> dict[str, dict]:
             "file_mtime": row["file_mtime"],
             "file_size": row["file_size"],
             "file_hash": row["file_hash"],
+            "processing_status": row["processing_status"],
+            "error_message": row["error_message"],
         }
         for row in rows
     }
@@ -272,6 +278,32 @@ def get_resumable_files(directory_root: str, max_retries: int = 3) -> list[dict]
     ]
 
 
+def get_failed_documents(directory_root: str | None = None,
+                         limit: int = 100) -> list[DocumentRecord]:
+    """获取索引失败的文件列表。"""
+    conn = get_connection()
+    query = "SELECT * FROM documents WHERE processing_status = 'error'"
+    params: list[str | int] = []
+    if directory_root:
+        query += " AND directory_root = ?"
+        params.append(directory_root)
+    query += " ORDER BY indexed_at DESC LIMIT ?"
+    params.append(limit)
+    rows = conn.execute(query, params).fetchall()
+    return [_row_to_document(row) for row in rows]
+
+
+def count_indexed_documents(directory_root: str) -> int:
+    """统计目录下已建立全文索引的文档数。"""
+    conn = get_connection()
+    row = conn.execute(
+        "SELECT COUNT(*) AS cnt FROM documents "
+        "WHERE directory_root = ? AND processing_status = 'indexed'",
+        (directory_root,),
+    ).fetchone()
+    return int(row["cnt"]) if row else 0
+
+
 # ── 索引目录管理 ──
 
 def upsert_directory(directory_path: str, file_count: int = 0,
@@ -321,6 +353,7 @@ def get_all_directories() -> list[DirectoryInfo]:
         LEFT JOIN (
             SELECT directory_root, COUNT(*) AS cnt
             FROM documents
+            WHERE processing_status = 'indexed'
             GROUP BY directory_root
         ) c ON c.directory_root = d.directory_path
     """).fetchall()

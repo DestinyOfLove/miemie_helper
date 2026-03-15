@@ -15,6 +15,13 @@ export interface SearchResult {
   extracted_text: string
 }
 
+export interface RuntimeCapabilities {
+  libreoffice_available: boolean
+  libreoffice_path: string | null
+  unsupported_effects: string[]
+  warnings: string[]
+}
+
 export interface DirectoryInfo {
   directory_path: string
   file_count: number
@@ -62,6 +69,16 @@ export interface IndexStatus {
   warnings: string[]
 }
 
+export interface IndexFailureItem {
+  doc_id: string
+  file_path: string
+  file_name: string
+  directory_root: string
+  extraction_method: string
+  processing_status: string
+  error_message: string
+}
+
 export const api = {
   search: async (query: string, scopes: string[] = ['content'], directories: string[] = []): Promise<SearchResult[]> => {
     const res = await fetch(`${BASE}/search/`, {
@@ -88,6 +105,12 @@ export const api = {
     return res.json()
   },
 
+  runtimeCapabilities: async (): Promise<RuntimeCapabilities> => {
+    const res = await fetch(`${BASE}/system/capabilities`)
+    if (!res.ok) throw new Error(await res.text())
+    return res.json()
+  },
+
   indexDirectories: async (): Promise<DirectoryInfo[]> => {
     const res = await fetch(`${BASE}/index/directories`)
     if (!res.ok) throw new Error(await res.text())
@@ -96,6 +119,12 @@ export const api = {
 
   scanChanges: async (): Promise<ScanChangesResponse> => {
     const res = await fetch(`${BASE}/index/scan-changes`)
+    if (!res.ok) throw new Error(await res.text())
+    return res.json()
+  },
+
+  indexFailures: async (limit = 100): Promise<IndexFailureItem[]> => {
+    const res = await fetch(`${BASE}/index/failures?limit=${limit}`)
     if (!res.ok) throw new Error(await res.text())
     return res.json()
   },

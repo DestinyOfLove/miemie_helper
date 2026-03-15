@@ -22,9 +22,16 @@ import {
   useTheme,
 } from '@mui/material'
 import { alpha } from '@mui/material/styles'
-import { api, type DirectoryInfo, type DirectoryScanResult, type IndexStatus } from '../api/client'
+import {
+  api,
+  type DirectoryInfo,
+  type DirectoryScanResult,
+  type IndexFailureItem,
+  type IndexStatus,
+} from '../api/client'
 import { PageContainer } from '../components/layout/PageContainer'
 import { SectionPanel } from '../components/layout/SectionPanel'
+import { useRuntimeCapabilities } from '../components/runtime/RuntimeCapabilitiesProvider'
 
 ModuleRegistry.registerModules([AllCommunityModule])
 
@@ -252,6 +259,8 @@ export function SearchPage() {
   const [scanning, setScanning] = useState(false)
   const [selectedDirs, setSelectedDirs] = useState<string[]>([])
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const [failures, setFailures] = useState<IndexFailureItem[]>([])
+  const { capabilities } = useRuntimeCapabilities()
 
   const gridRef = useRef<AgGridReact<RowData>>(null)
 
@@ -282,9 +291,20 @@ export function SearchPage() {
     setScanning(false)
   }, [])
 
+  const loadFailures = useCallback(async () => {
+    try {
+      const result = await api.indexFailures(50)
+      setFailures(result)
+    } catch {
+      setFailures([])
+    }
+  }, [])
+
   useEffect(() => {
-    loadDirectories().then(() => doScanChanges())
-  }, [loadDirectories, doScanChanges])
+    void loadDirectories()
+    void doScanChanges()
+    void loadFailures()
+  }, [loadDirectories, doScanChanges, loadFailures])
 
   const commitTag = () => {
     const v = inputVal.trim()
@@ -326,6 +346,7 @@ export function SearchPage() {
           clearInterval(pollRef.current!)
           setIndexing(false)
           await loadDirectories()
+          await loadFailures()
         }
       }, 600)
     } catch (e: unknown) {
@@ -338,6 +359,7 @@ export function SearchPage() {
     try {
       await api.deleteDirectory(dir)
       await loadDirectories()
+      await loadFailures()
       setSelectedDirs(prev => prev.filter(d => d !== dir))
     } catch (e: unknown) {
       alert(String(e))
@@ -356,6 +378,7 @@ export function SearchPage() {
           setIndexing(false)
           await loadDirectories()
           await doScanChanges()
+          await loadFailures()
         }
       }, 600)
     } catch (e: unknown) {
@@ -375,6 +398,7 @@ export function SearchPage() {
           clearInterval(pollRef.current!)
           setIndexing(false)
           await loadDirectories()
+          await loadFailures()
         }
       }, 600)
     } catch (e: unknown) {
@@ -475,6 +499,11 @@ export function SearchPage() {
           <Chip label="本地目录" size="small" color="primary" variant="outlined" />
         </AccordionSummary>
         <AccordionDetails sx={{ px: 3, pb: 3 }}>
+            {capabilities && !capabilities.libreoffice_available && (
+              <Alert severity="warning" variant="filled" sx={{ mb: 2, borderRadius: '18px' }}>
+                当前机器缺少 LibreOffice，.doc/.wps 文件无法提取文本或建立索引，搜索结果会遗漏这些文件内容。安装 LibreOffice 后重启应用即可恢复。
+              </Alert>
+            )}
             <Box sx={{ display: 'flex', gap: 1.5, mt: 1, flexDirection: { xs: 'column', md: 'row' } }}>
               <TextField
                 fullWidth
@@ -684,6 +713,51 @@ export function SearchPage() {
                         </tr>
                       )
                     })}
+                  </tbody>
+                </table>
+              </Box>
+            )}
+            {failures.length > 0 && (
+              <Box sx={{ mt: 2.5 }}>
+                <Alert severity="error" variant="outlined" sx={{ mb: 1.5, borderRadius: '18px' }}>
+                  最近有 {failures.length} 个文件未能建立索引。这些文件当前不会进入全文检索，请先处理失败原因后再重试。
+                </Alert>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                  <thead>
+                    <tr style={{ background: softPanelBg }}>
+                      {['文件', '目录', '状态', '失败原因'].map(h => (
+                        <th key={h} style={{ padding: '8px 10px', textAlign: 'left', borderBottom: '1px solid #e0e0e0', fontWeight: 500 }}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {failures.map(failure => (
+                      <tr key={`${failure.doc_id}-${failure.file_path}`}>
+                        <td style={{ padding: '8px 10px', color: '#B71C1C', fontWeight: 600 }}>
+                          {failure.file_name}
+                        </td>
+                        <td style={{ padding: '8px 10px', wordBreak: 'break-all', color: '#666' }}>
+                          {failure.directory_root}
+                        </td>
+                        <td style={{ padding: '8px 10px' }}>
+                          <span
+                            style={{
+                              display: 'inline-flex',
+                              padding: '2px 8px',
+                              borderRadius: 999,
+                              background: '#FDECEA',
+                              color: '#B71C1C',
+                              fontWeight: 600,
+                            }}
+                          >
+                            {failure.extraction_method || failure.processing_status || '索引失败'}
+                          </span>
+                        </td>
+                        <td style={{ padding: '8px 10px', color: '#B71C1C', wordBreak: 'break-word' }}>
+                          {failure.error_message}
+                        </td>
+                      </tr>
+                    ))}
                   </tbody>
                 </table>
               </Box>

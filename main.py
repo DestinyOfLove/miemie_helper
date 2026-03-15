@@ -8,6 +8,8 @@ from pathlib import Path
 
 from src.api.index_routes import router as index_router
 from src.api.search_routes import router as search_router, _cleanup_executor
+from src.api.system_routes import router as system_router
+from src.config import BUNDLE_ROOT, WEB_PORT
 
 
 @asynccontextmanager
@@ -22,9 +24,12 @@ app = FastAPI(title="MieMie Helper", lifespan=lifespan)
 
 app.include_router(index_router)
 app.include_router(search_router)
+app.include_router(system_router)
 
 ROOT = Path(__file__).parent.resolve()
 FRONTEND_EXPORT_DIR = ROOT / "frontend" / "out"
+if not FRONTEND_EXPORT_DIR.exists():
+    FRONTEND_EXPORT_DIR = BUNDLE_ROOT / "frontend" / "out"
 
 
 def _is_within_export_dir(path: Path) -> bool:
@@ -78,10 +83,15 @@ def _setup_static() -> None:
 _setup_static()
 
 
-if __name__ == "__main__":
+def run_server(host: str = "0.0.0.0", port: int = WEB_PORT) -> None:
+    """启动 Web 服务。"""
     uvicorn.run(
         "main:app",
-        host="0.0.0.0",
-        port=4001,
+        host=host,
+        port=port,
         reload=False,
     )
+
+
+if __name__ == "__main__":
+    run_server()

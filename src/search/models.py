@@ -76,6 +76,14 @@ class IndexStatusResponse(BaseModel):
     warnings: list[str] = []
 
 
+class RuntimeCapabilities(BaseModel):
+    """运行环境能力。"""
+    libreoffice_available: bool = False
+    libreoffice_path: str | None = None
+    unsupported_effects: list[str] = []
+    warnings: list[str] = []
+
+
 class DirectoryInfo(BaseModel):
     """已索引目录信息。"""
     directory_path: str
@@ -110,3 +118,14 @@ class DirectoryScanResult(BaseModel):
 class ScanChangesResponse(BaseModel):
     """全部目录的变更扫描响应。"""
     results: list[DirectoryScanResult] = []
+
+
+class IndexFailureItem(BaseModel):
+    """索引失败文件。"""
+    doc_id: str
+    file_path: str
+    file_name: str
+    directory_root: str
+    extraction_method: str = ""
+    processing_status: str = ""
+    error_message: str = ""

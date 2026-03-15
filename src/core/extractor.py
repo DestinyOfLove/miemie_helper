@@ -35,6 +35,17 @@ logger = logging.getLogger(__name__)
 _ocr_engine: RapidOCR | None = None
 
 
+class LibreOfficeNotAvailableError(RuntimeError):
+    """当前机器未安装 LibreOffice。"""
+
+    def __init__(self, format_label: str):
+        self.error_code = "libreoffice_missing"
+        self.method = f"{format_label}需安装LibreOffice"
+        super().__init__(
+            f"缺少 LibreOffice：无法提取 {format_label} 文本内容，该文件不会进入全文检索。"
+        )
+
+
 def get_ocr_engine() -> RapidOCR:
     """延迟初始化 OCR 引擎（单例）。"""
     global _ocr_engine
@@ -209,9 +220,8 @@ def extract_via_libreoffice(file_path: Path) -> str:
     """
     soffice = find_soffice()
     if not soffice:
-        raise FileNotFoundError(
-            "未找到 LibreOffice。请安装 LibreOffice: https://www.libreoffice.org/"
-        )
+        format_label = "Word(.doc)" if file_path.suffix.lower() in DOC_EXTENSIONS else "WPS"
+        raise LibreOfficeNotAvailableError(format_label)
 
     with _soffice_lock, tempfile.TemporaryDirectory() as tmpdir:
         cmd = [
@@ -297,9 +307,9 @@ def extract_text(file_path: Path) -> tuple[str, str]:
         try:
             text = extract_via_libreoffice(file_path)
             return text, f"{fmt}→LibreOffice"
-        except FileNotFoundError as e:
+        except LibreOfficeNotAvailableError as e:
             logger.warning("LibreOffice 不可用: %s", e)
-            return "", f"{fmt}需安装LibreOffice"
+            raise
         except Exception as e:
             logger.error("LibreOffice 转换失败 %s: %s", file_path.name, e)
             return "", f"{fmt}转换失败"

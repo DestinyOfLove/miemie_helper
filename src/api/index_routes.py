@@ -14,6 +14,7 @@ from src.search.indexer import (
 from src.search.models import (
     DirectoryInfo,
     IndexRequest,
+    IndexFailureItem,
     IndexStatusResponse,
     ScanChangesResponse,
 )
@@ -92,6 +93,24 @@ async def scan_changes() -> ScanChangesResponse:
     dirs = document_db.get_all_directories()
     results = [scan_directory_changes(d.directory_path) for d in dirs]
     return ScanChangesResponse(results=results)
+
+
+@router.get("/failures", response_model=list[IndexFailureItem])
+async def list_index_failures(limit: int = 100) -> list[IndexFailureItem]:
+    """列出最近索引失败的文件。"""
+    failed_docs = document_db.get_failed_documents(limit=limit)
+    return [
+        IndexFailureItem(
+            doc_id=doc.id,
+            file_path=doc.file_path,
+            file_name=doc.file_name,
+            directory_root=doc.directory_root,
+            extraction_method=doc.extraction_method,
+            processing_status=doc.processing_status,
+            error_message=doc.error_message,
+        )
+        for doc in failed_docs
+    ]
 
 
 @router.post("/directory/star")

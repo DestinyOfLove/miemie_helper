@@ -7,10 +7,15 @@ from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
 
 from src.config import BATCH_COMMIT_SIZE, INDEXING_WORKERS
-from src.core.extractor import compute_file_hash, extract_text
+from src.core.extractor import (
+    LibreOfficeNotAvailableError,
+    compute_file_hash,
+    extract_text,
+)
 from src.core.file_scanner import guess_year_from_path, scan_directory
 from src.core.parser import parse_document_fields
 from src.core.text_utils import normalize_text_for_indexing
+from src.runtime_capabilities import LIBREOFFICE_MISSING_WARNING, get_runtime_capabilities
 from src.search import document_db, fulltext_store
 from src.search.models import (
     DirectoryScanResult,
@@ -93,11 +98,12 @@ def _extract_single_file(file_path_str: str, root_str: str,
     file_path = Path(file_path_str)
     root = Path(root_str)
 
+    stat = file_path.stat()
+    file_hash = precomputed_hash or compute_file_hash(file_path)
+    year_hint = guess_year_from_path(file_path, root)
+
     try:
-        stat = file_path.stat()
-        file_hash = precomputed_hash or compute_file_hash(file_path)
         text, method = extract_text(file_path)
-        year_hint = guess_year_from_path(file_path, root)
 
         if text:
             fields = parse_document_fields(text, file_path_str, year_hint)
@@ -122,12 +128,31 @@ def _extract_single_file(file_path_str: str, root_str: str,
             "method": method,
             "fields": fields,
         }
+    except LibreOfficeNotAvailableError as e:
+        return {
+            "success": False,
+            "file_path": file_path_str,
+            "file_name": file_path.name,
+            "file_size": stat.st_size,
+            "file_mtime": stat.st_mtime,
+            "file_hash": file_hash,
+            "year_hint": year_hint,
+            "method": e.method,
+            "error": str(e),
+            "error_code": e.error_code,
+        }
     except Exception as e:
         return {
             "success": False,
             "file_path": file_path_str,
             "file_name": Path(file_path_str).name,
+            "file_size": stat.st_size,
+            "file_mtime": stat.st_mtime,
+            "file_hash": file_hash,
+            "year_hint": year_hint,
+            "method": "",
             "error": str(e),
+            "error_code": "extract_failed",
         }
 
 
@@ -146,6 +171,10 @@ def run_indexing(directory: str) -> None:
     document_db.upsert_directory(directory_str, status="scanning")
 
     try:
+        runtime_capabilities = get_runtime_capabilities()
+        if not runtime_capabilities.libreoffice_available:
+            indexing_status.warnings.append(LIBREOFFICE_MISSING_WARNING)
+
         # ── Phase 1: 扫描文件系统 ──
         indexing_status.phase = "scanning"
         all_files = scan_directory(root)
@@ -153,7 +182,11 @@ def run_indexing(directory: str) -> None:
 
         # ── Phase 2: 加载已知文件 + 分类变更 ──
         known_files = document_db.get_known_files(directory_str)
-        known_hashes: set[str] = {info["file_hash"] for info in known_files.values()}
+        known_hashes: set[str] = {
+            info["file_hash"]
+            for info in known_files.values()
+            if info["processing_status"] == "indexed"
+        }
 
         to_add: list[Path] = []
         to_update: list[tuple[Path, str, str]] = []  # (path, old_doc_id, new_hash)
@@ -175,6 +208,10 @@ def run_indexing(directory: str) -> None:
             else:
                 known = known_files[path_str]
                 stat = file_path.stat()
+                if known["processing_status"] != "indexed":
+                    new_hash = compute_file_hash(file_path)
+                    to_update.append((file_path, known["id"], new_hash))
+                    continue
                 # 快速预过滤：mtime + size 一致则跳过
                 if stat.st_mtime == known["file_mtime"] and stat.st_size == known["file_size"]:
                     indexing_status.skipped += 1
@@ -244,11 +281,13 @@ def run_indexing(directory: str) -> None:
         indexing_status.phase = "indexing"
 
         successful_results: list[dict] = []
+        failed_results: list[dict] = []
         for result in extraction_results:
             if not result["success"]:
                 indexing_status.errors.append(
                     f"{result['file_name']}: {result['error']}"
                 )
+                failed_results.append(result)
                 continue
             successful_results.append(result)
 
@@ -259,6 +298,31 @@ def run_indexing(directory: str) -> None:
                 indexing_status.updated += 1
             else:
                 indexing_status.added += 1
+
+        if failed_results:
+            document_db.begin_batch()
+            try:
+                for result in failed_results:
+                    doc = DocumentRecord(
+                        id=result["file_hash"],
+                        file_path=result["file_path"],
+                        file_name=result["file_name"],
+                        file_size=result["file_size"],
+                        file_mtime=result["file_mtime"],
+                        file_hash=result["file_hash"],
+                        directory_root=directory_str,
+                        extracted_text="",
+                        extraction_method=result.get("method", ""),
+                        source_year=result.get("year_hint", ""),
+                    )
+                    document_db.upsert_document(doc)
+                    document_db.mark_processing(
+                        doc.id, "error", result["error"]
+                    )
+                document_db.commit_batch()
+            except Exception:
+                document_db.rollback_batch()
+                raise
 
         # 分批写入
         for batch_start in range(0, len(successful_results), BATCH_COMMIT_SIZE):
@@ -324,7 +388,7 @@ def run_indexing(directory: str) -> None:
             raise
 
         # ── 完成 ──
-        indexed_count = len(all_files) - len(indexing_status.errors)
+        indexed_count = document_db.count_indexed_documents(directory_str)
         document_db.update_directory_status(
             directory_str, status="complete", indexed_count=indexed_count
         )

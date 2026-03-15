@@ -1,15 +1,30 @@
 """集中配置：路径常量、模型名称、搜索参数。"""
 
 import os
+import platform
+import sys
 from pathlib import Path
 
 # 项目根目录
 PROJECT_ROOT = Path(__file__).parent.parent
+BUNDLE_ROOT = Path(getattr(sys, "_MEIPASS", PROJECT_ROOT)).resolve()
+
+
+def _resolve_default_data_dir() -> Path:
+    """解析默认运行时数据目录。"""
+    local_override = os.environ.get("MIEMIE_DATA_DIR")
+    if local_override:
+        return Path(local_override).expanduser().resolve()
+
+    if platform.system() == "Windows":
+        local_app_data = os.environ.get("LOCALAPPDATA")
+        base_dir = Path(local_app_data) if local_app_data else Path.home() / "AppData" / "Local"
+        return (base_dir / "MieMie Helper" / "doc_search").resolve()
+
+    return (PROJECT_ROOT / ".miemie_helper" / "doc_search").resolve()
 
 # 运行时数据目录（可通过环境变量覆盖）
-DATA_DIR = Path(
-    os.environ.get("MIEMIE_DATA_DIR", PROJECT_ROOT / ".miemie_helper" / "doc_search")
-).resolve()
+DATA_DIR = _resolve_default_data_dir()
 
 # SQLite 数据库
 DB_DIR = DATA_DIR / "db"
